@@ -14,6 +14,7 @@ set(LAMMPS_LIB_BINARY_DIR ${CMAKE_BINARY_DIR}/lib)
 file(GLOB LIB_SOURCES ${LAMMPS_SOURCE_DIR}/*.cpp)
 file(GLOB LMP_SOURCES ${LAMMPS_SOURCE_DIR}/main.cpp)
 list(REMOVE_ITEM LIB_SOURCES ${LMP_SOURCES})
+add_library(lammps ${LIB_SOURCES})
 
 # Cmake modules/macros are in a subdirectory to keep this file cleaner
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/Modules)
@@ -48,13 +49,12 @@ if(BUILD_SHARED_LIBS) # for all pkg libs, mpi_stubs and linalg
 endif()
 include(GNUInstallDirs)
 
-set(LAMMPS_LINK_LIBS)
 set(LAMMPS_API_DEFINES)
 option(ENABLE_MPI "Build MPI version" OFF)
 if(ENABLE_MPI)
   find_package(MPI REQUIRED)
   include_directories(${MPI_C_INCLUDE_PATH})
-  list(APPEND LAMMPS_LINK_LIBS ${MPI_CXX_LIBRARIES})
+  target_link_libraries(lammps ${MPI_CXX_LIBRARIES})
   option(LAMMPS_LONGLONG_TO_LONG "Workaround if your system or MPI version does not recognize 'long long' data types" OFF)
   if(LAMMPS_LONGLONG_TO_LONG)
     add_definitions(-DLAMMPS_LONGLONG_TO_LONG)
@@ -63,7 +63,7 @@ else()
   file(GLOB MPI_SOURCES ${LAMMPS_SOURCE_DIR}/STUBS/mpi.c)
   add_library(mpi_stubs STATIC ${MPI_SOURCES})
   include_directories(${LAMMPS_SOURCE_DIR}/STUBS)
-  list(APPEND LAMMPS_LINK_LIBS mpi_stubs)
+  target_link_libraries(lammps mpi_stubs)
 endif()
 
 set(LAMMPS_SIZE_LIMIT "LAMMPS_SMALLBIG" CACHE STRING "Lammps size limit")
@@ -123,6 +123,32 @@ if(ENABLE_BODY AND ENABLE_POEMS)
   message(FATAL_ERROR "BODY and POEMS cannot be enabled at the same time")
 endif()
 
+######################################
+# Generate Basic Style files 
+######################################
+include(StyleHeaderUtils)
+RegisterStyles(${LAMMPS_SOURCE_DIR})
+
+##############################################
+# add sources of enabled packages
+############################################
+foreach(PKG ${DEFAULT_PACKAGES} ${OTHER_PACKAGES})
+  if(ENABLE_${PKG})
+    set(${PKG}_SOURCES_DIR ${LAMMPS_SOURCE_DIR}/${PKG})
+
+    # detects styles in package and adds them to global list
+    RegisterStyles(${${PKG}_SOURCES_DIR})
+
+    file(GLOB ${PKG}_SOURCES ${${PKG}_SOURCES_DIR}/*.cpp)
+    #always static never installed
+    add_library(pkg_${PKG} STATIC ${${PKG}_SOURCES})
+    #hide them from user
+    set_target_properties(pkg_${PKG} PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${LAMMPS_LIB_BINARY_DIR})
+    target_link_libraries(lammps pkg_${PKG})
+    target_include_directories(pkg_${PKG} PUBLIC ${${PKG}_SOURCES_DIR})
+  endif()
+endforeach()
+
 ######################################################
 # packages with special compiler needs or external libs
 ######################################################
@@ -150,21 +176,21 @@ if(ENABLE_KSPACE)
   set_property(CACHE FFT PROPERTY STRINGS KISSFFT FFTW3 MKL FFTW2)
   if(NOT FFT STREQUAL "KISSFFT")
     find_package(${FFT} REQUIRED)
-    add_definitions(-DFFT_${FFT})
-    include_directories(${${FFT}_INCLUDE_DIRS})
-    list(APPEND LAMMPS_LINK_LIBS ${${FFT}_LIBRARIES})
+    target_compile_options(pkg_KSPACE PRIVATE -DFFT_${FFT})
+    target_include_directories(pkg_KSPACE PRIVATE ${${FFT}_INCLUDE_DIRS})
+    target_link_libraries(pkg_KSPACE ${${FFT}_LIBRARIES})
   endif()
   set(PACK_OPTIMIZATION "PACK_ARRAY" CACHE STRING "Optimization for FFT")
   set_property(CACHE PACK_OPTIMIZATION PROPERTY STRINGS PACK_ARRAY PACK_POINTER PACK_MEMCPY)
   if(NOT PACK_OPTIMIZATION STREQUAL "PACK_ARRAY")
-    add_definitions(-D${PACK_OPTIMIZATION})
+    target_compile_options(pkg_KSPACE PRIVATE -D${PACK_OPTIMIZATION})
   endif()
 endif()
 
 if(ENABLE_MISC)
   option(LAMMPS_XDR "include XDR compatibility files for doing particle dumps in XTC format" OFF)
   if(LAMMPS_XDR)
-    add_definitions(-DLAMMPS_XDR) # for liblammps
+    target_compile_options(pkg_MISC PUBLIC -DLAMMPS_XDR)
   endif()
 endif()
 
@@ -177,7 +203,7 @@ if(ENABLE_MSCG OR ENABLE_USER-ATC OR ENABLE_USER-AWPMD OR ENABLE_USER-QUIP)
     include(CheckFortranCompilerFlag)
     check_Fortran_compiler_flag("-fno-second-underscore" FC_HAS_NO_SECOND_UNDERSCORE)
     if(FC_HAS_NO_SECOND_UNDERSCORE)
-      target_compile_options(linalg PRIVATE -fno-second-underscore)
+    target_compile_options(linalg PRIVATE -fno-second-underscore)
     endif()
     set(LAPACK_LIBRARIES linalg)
   endif()
@@ -186,9 +212,10 @@ endif()
 if(ENABLE_PYTHON)
   find_package(PythonInterp REQUIRED)
   find_package(PythonLibs REQUIRED)
-  add_definitions(-DLMP_PYTHON)
-  include_directories(${PYTHON_INCLUDE_DIR})
-  list(APPEND LAMMPS_LINK_LIBS ${PYTHON_LIBRARY})
+  target_compile_options(pkg_PYTHON PUBLIC -DLMP_PYTHON)
+  target_include_directories(pkg_PYTHON PRIVATE ${PYTHON_INCLUDE_DIR})
+  target_link_libraries(pkg_PYTHON ${PYTHON_LIBRARY})
+  set_target_properties(pkg_PYTHON PROPERTIES POSITION_INDEPENDENT_CODE ON)
   if(NOT PYTHON_INSTDIR)
     execute_process(COMMAND ${PYTHON_EXECUTABLE}
 	  -c "import distutils.sysconfig as cg; print(cg.get_python_lib(1,0,prefix='${CMAKE_INSTALL_PREFIX}'))"
@@ -203,15 +230,15 @@ endif()
 find_package(JPEG)
 if(JPEG_FOUND)
   add_definitions(-DLAMMPS_JPEG)
-  include_directories(${JPEG_INCLUDE_DIR})
-  list(APPEND LAMMPS_LINK_LIBS ${JPEG_LIBRARIES})
+  target_include_directories(lammps PRIVATE ${JPEG_INCLUDE_DIR})
+  target_link_libraries(lammps ${JPEG_LIBRARIES})
 endif()
 
 find_package(PNG)
 find_package(ZLIB)
 if(PNG_FOUND AND ZLIB_FOUND)
-  include_directories(${PNG_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
-  list(APPEND LAMMPS_LINK_LIBS ${PNG_LIBRARIES} ${ZLIB_LIBRARIES})
+  target_include_directories(lammps PRIVATE ${PNG_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
+  target_link_libraries(lammps ${PNG_LIBRARIES} ${ZLIB_LIBRARIES})
   add_definitions(-DLAMMPS_PNG)
 endif()
 
@@ -229,51 +256,50 @@ endif()
 
 if(ENABLE_VORONOI)
   find_package(VORO REQUIRED) #some distros
-  include_directories(${VORO_INCLUDE_DIRS})
-  list(APPEND LAMMPS_LINK_LIBS ${VORO_LIBRARIES})
+  target_include_directories(pkg_VORONOI PRIVATE ${VORO_INCLUDE_DIRS})
+  target_link_libraries(pkg_VORONOI ${VORO_LIBRARIES})
 endif()
 
 if(ENABLE_USER-MOLFILE)
   add_library(molfile INTERFACE)
   target_include_directories(molfile INTERFACE ${LAMMPS_LIB_SOURCE_DIR}/molfile)
   target_link_libraries(molfile INTERFACE ${CMAKE_DL_LIBS})
-  list(APPEND LAMMPS_LINK_LIBS molfile)
+  target_link_libraries(pkg_USER-MOLFILE molfile)
 endif()
 
 if(ENABLE_USER-NETCDF)
   find_package(NetCDF REQUIRED)
-  include_directories(NETCDF_INCLUDE_DIR)
-  list(APPEND LAMMPS_LINK_LIBS ${NETCDF_LIBRARY})
-  add_definitions(-DLMP_HAS_NETCDF -DNC_64BIT_DATA=0x0020)
+  target_include_directories(pkg_USER-NETCDF PRIVATE ${NETCDF_INCLUDE_DIR})
+  target_link_libraries(pkg_USER-NETCDF PRIVATE ${NETCDF_LIBRARY})
+  target_compile_options(pkg_USER-NETCDF PRIVATE -DLMP_HAS_NETCDF -DNC_64BIT_DATA=0x0020)
 endif()
 
 if(ENABLE_USER-SMD)
   find_package(Eigen3 REQUIRED)
-  include_directories(${EIGEN3_INCLUDE_DIR})
+  target_include_directories(pkg_USER-SMD PUBLIC ${EIGEN3_INCLUDE_DIR})
 endif()
 
 if(ENABLE_USER-QUIP)
   find_package(QUIP REQUIRED)
-  list(APPEND LAMMPS_LINK_LIBS ${QUIP_LIBRARIES} ${LAPACK_LIBRARIES} ${CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES})
+  target_link_libraries(pkg_USER-QUIP ${QUIP_LIBRARIES} ${LAPACK_LIBRARIES} ${CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES})
 endif()
 
 if(ENABLE_USER-QMMM)
   find_package(QE REQUIRED)
-  include_directories(${QE_INCLUDE_DIRS})
-  list(APPEND LAMMPS_LINK_LIBS ${QE_LIBRARIES} ${CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES})
+  target_include_directories(pkg_USER-QMMM PRIVATE ${QE_INCLUDE_DIRS})
+  target_link_libraries(pkg_USER-QMMM ${QE_LIBRARIES} ${CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES})
 endif()
 
 if(ENABLE_USER-VTK)
   find_package(VTK REQUIRED NO_MODULE)
   include(${VTK_USE_FILE})
-  add_definitions(-DLAMMPS_VTK)
-  list(APPEND LAMMPS_LINK_LIBS ${VTK_LIBRARIES})
+  target_link_libraries(pkg_USER-VTK PRIVATE ${VTK_LIBRARIES})
 endif()
 
 if(ENABLE_KIM)
   find_package(KIM REQUIRED)
-  list(APPEND LAMMPS_LINK_LIBS ${KIM_LIBRARIES})
-  include_directories(${KIM_INCLUDE_DIRS})
+  target_include_directories(pkg_KIM PRIVATE ${KIM_INCLUDE_DIRS})
+  target_link_libraries(pkg_KIM ${KIM_LIBRARIES})
 endif()
 
 if(ENABLE_MSCG)
@@ -294,7 +320,7 @@ if(ENABLE_MSCG)
   endif()
   file(GLOB MSCG_SOURCES ${LAMMPS_LIB_MSCG_BIN_DIR}/*.cpp)
   add_library(mscg STATIC ${MSCG_SOURCES})
-  list(APPEND LAMMPS_LINK_LIBS mscg)
+  target_link_libraries(pkg_MSCG mscg)
   target_compile_options(mscg PRIVATE -DDIMENSION=3 -D_exclude_gromacs=1)
   target_include_directories(mscg PUBLIC ${LAMMPS_LIB_MSCG_BIN_DIR})
   target_link_libraries(mscg ${GSL_LIBRARIES} ${LAPACK_LIBRARIES})
@@ -320,29 +346,7 @@ foreach(FUNC sin cos)
     message(FATAL_ERROR "Could not find needed math function - ${FUNC}")
   endif(NOT FOUND_${FUNC}_${MATH_LIBRARIES})
 endforeach(FUNC)
-list(APPEND LAMMPS_LINK_LIBS ${MATH_LIBRARIES})
-
-######################################
-# Generate Basic Style files 
-######################################
-include(StyleHeaderUtils)
-RegisterStyles(${LAMMPS_SOURCE_DIR})
-
-##############################################
-# add sources of enabled packages
-############################################
-foreach(PKG ${DEFAULT_PACKAGES} ${OTHER_PACKAGES})
-  if(ENABLE_${PKG})
-    set(${PKG}_SOURCES_DIR ${LAMMPS_SOURCE_DIR}/${PKG})
-
-    # detects styles in package and adds them to global list
-    RegisterStyles(${${PKG}_SOURCES_DIR})
-
-    file(GLOB ${PKG}_SOURCES ${${PKG}_SOURCES_DIR}/*.cpp)
-    list(APPEND LIB_SOURCES ${${PKG}_SOURCES})
-    include_directories(${${PKG}_SOURCES_DIR})
-  endif()
-endforeach()
+target_link_libraries(lammps ${MATH_LIBRARIES})
 
 ##############################################
 # add lib sources of (simple) enabled packages
@@ -355,7 +359,7 @@ foreach(SIMPLE_LIB REAX MEAM POEMS USER-ATC USER-AWPMD USER-COLVARS USER-H5MD
     file(GLOB_RECURSE ${PKG_LIB}_SOURCES ${LAMMPS_LIB_SOURCE_DIR}/${PKG_LIB}/*.F
       ${LAMMPS_LIB_SOURCE_DIR}/${PKG_LIB}/*.c ${LAMMPS_LIB_SOURCE_DIR}/${PKG_LIB}/*.cpp)
     add_library(${PKG_LIB} STATIC ${${PKG_LIB}_SOURCES})
-    list(APPEND LAMMPS_LINK_LIBS ${PKG_LIB})
+    target_link_libraries(pkg_${SIMPLE_LIB} ${PKG_LIB})
     if(PKG_LIB STREQUAL awpmd)
       target_include_directories(awpmd PUBLIC ${LAMMPS_LIB_SOURCE_DIR}/awpmd/systems/interact ${LAMMPS_LIB_SOURCE_DIR}/awpmd/ivutils/include)
     elseif(PKG_LIB STREQUAL h5md)
@@ -379,7 +383,7 @@ if(ENABLE_USER-H5MD)
   target_link_libraries(h5md ${HDF5_LIBRARIES})
   target_include_directories(h5md PRIVATE ${HDF5_INCLUDE_DIRS})
 endif()
-    
+
 if(ENABLE_MEAM AND FC_HAS_NO_SECOND_UNDERSCORE)
   foreach(FSRC ${meam_SOURCES})
     string(REGEX REPLACE "^.*\\." "" FEXT "${FSRC}")
@@ -412,8 +416,10 @@ if(ENABLE_USER-OMP)
 
     get_property(USER-OMP_SOURCES GLOBAL PROPERTY OMP_SOURCES)
 
-    list(APPEND LIB_SOURCES ${USER-OMP_SOURCES})
-    include_directories(${USER-OMP_SOURCES_DIR})
+    add_library(pkg_USER-OMP STATIC ${USER-OMP_SOURCES})
+    set_target_properties(pkg_USER-OMP PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${LAMMPS_LIB_BINARY_DIR})
+    target_link_libraries(lammps pkg_USER-OMP)
+    target_include_directories(pkg_USER-OMP PUBLIC ${USER-OMP_SOURCES_DIR})
 endif()
 
 if(ENABLE_KOKKOS)
@@ -426,8 +432,7 @@ if(ENABLE_KOKKOS)
                           ${LAMMPS_LIB_KOKKOS_SRC_DIR}/containers/src
                           ${LAMMPS_LIB_KOKKOS_SRC_DIR}/algorithms/src
                           ${LAMMPS_LIB_KOKKOS_BIN_DIR})
-  include_directories(${Kokkos_INCLUDE_DIRS})
-  list(APPEND LAMMPS_LINK_LIBS kokkos)
+  target_include_directories(pkg_KOKKOS PRIVATE ${Kokkos_INCLUDE_DIRS})
 
   set(KOKKOS_PKG_SOURCES_DIR ${LAMMPS_SOURCE_DIR}/KOKKOS)
   set(KOKKOS_PKG_SOURCES ${KOKKOS_PKG_SOURCES_DIR}/kokkos.cpp
@@ -448,8 +453,11 @@ if(ENABLE_KOKKOS)
 
   get_property(KOKKOS_PKG_SOURCES GLOBAL PROPERTY KOKKOS_PKG_SOURCES)
 
-  list(APPEND LIB_SOURCES ${KOKKOS_PKG_SOURCES})
-  include_directories(${KOKKOS_PKG_SOURCES_DIR})
+  add_library(pkg_KOKKOS STATIC ${KOKKOS_PKG_SOURCES})
+  set_target_properties(pkg_KOKKOS PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${LAMMPS_LIB_BINARY_DIR})
+  target_link_libraries(pkg_KOKKOS kokkos)
+  target_link_libraries(lammps pkg_KOKKOS)
+  target_include_directories(pkg_KOKKOS PUBLIC ${KOKKOS_PKG_SOURCES_DIR})
 endif()
 
 if(ENABLE_OPT)
@@ -462,8 +470,10 @@ if(ENABLE_OPT)
 
     get_property(OPT_SOURCES GLOBAL PROPERTY OPT_SOURCES)
 
-    list(APPEND LIB_SOURCES ${OPT_SOURCES})
-    include_directories(${OPT_SOURCES_DIR})
+    add_library(pkg_OPT STATIC ${OPT_SOURCES})
+    set_target_properties(pkg_OPT PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${LAMMPS_LIB_BINARY_DIR})
+    target_link_libraries(lammps pkg_OPT)
+    target_include_directories(pkg_OPT PUBLIC ${OPT_SOURCES_DIR})
 endif()
 
 if(ENABLE_USER-INTEL)
@@ -486,8 +496,10 @@ if(ENABLE_USER-INTEL)
 
     get_property(USER-INTEL_SOURCES GLOBAL PROPERTY USER-INTEL_SOURCES)
 
-    list(APPEND LIB_SOURCES ${USER-INTEL_SOURCES})
-    include_directories(${USER-INTEL_SOURCES_DIR})
+    add_library(pkg_USER-INTEL STATIC ${USER-INTEL_SOURCES})
+    set_target_properties(pkg_USER-INTEL PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${LAMMPS_LIB_BINARY_DIR})
+    target_link_libraries(lammps pkg_USER-INTEL)
+    target_include_directories(pkg_USER-INTEL PUBLIC ${USER-INTEL_SOURCES_DIR})
 endif()
 
 if(ENABLE_GPU)
@@ -542,8 +554,6 @@ if(ENABLE_GPU)
       target_compile_definitions(gpu PRIVATE -DUSE_CUDPP)
     endif()
 
-    list(APPEND LAMMPS_LINK_LIBS gpu)
-
     add_executable(nvc_get_devices ${LAMMPS_LIB_SOURCE_DIR}/gpu/geryon/ucl_get_devices.cpp)
     target_compile_definitions(nvc_get_devices PRIVATE -DUCL_CUDADR)
     target_link_libraries(nvc_get_devices PRIVATE ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY})
@@ -551,14 +561,14 @@ if(ENABLE_GPU)
 
 
     # GPU package
-    list(APPEND LAMMPS_LINK_LIBS ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY})
+    target_link_libraries(gpu ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY})
 
     set(GPU_SOURCES_DIR ${LAMMPS_SOURCE_DIR}/GPU)
     set(GPU_SOURCES ${GPU_SOURCES_DIR}/gpu_extra.h
                     ${GPU_SOURCES_DIR}/fix_gpu.h
                     ${GPU_SOURCES_DIR}/fix_gpu.cpp)
     FindStyleHeaders(${GPU_SOURCES_DIR} FIX_CLASS fix_ FIX)
-    include_directories(${GPU_SOURCES_DIR})
+    target_include_directories(pkg_GPU PRIVATE ${GPU_SOURCES_DIR})
 
     set_property(GLOBAL PROPERTY "GPU_SOURCES" "${GPU_SOURCES}")
 
@@ -567,8 +577,11 @@ if(ENABLE_GPU)
 
     get_property(GPU_SOURCES GLOBAL PROPERTY GPU_SOURCES)
 
-    list(APPEND LIB_SOURCES ${GPU_SOURCES})
-    include_directories(${GPU_SOURCES_DIR})
+    add_library(pkg_GPU STATIC ${GPU_SOURCES})
+    set_target_properties(pkg_GPU PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${LAMMPS_LIB_BINARY_DIR})
+    target_link_libraries(pkg_GPU kokkos)
+    target_link_libraries(lammps pkg_GPU)
+    target_include_directories(pkg_GPU PUBLIC ${GPU_SOURCES_DIR})
 endif()
 
 ######################################################
@@ -579,14 +592,11 @@ set(LAMMPS_STYLE_HEADERS_DIR ${CMAKE_CURRENT_BINARY_DIR}/styles)
 
 GenerateStyleHeaders(${LAMMPS_STYLE_HEADERS_DIR})
 
-include_directories(${LAMMPS_SOURCE_DIR})
-include_directories(${LAMMPS_STYLE_HEADERS_DIR})
+target_include_directories(lammps PRIVATE ${LAMMPS_SOURCE_DIR} ${LAMMPS_STYLE_HEADERS_DIR})
 
 ###########################################
 # Actually add executable and lib to build
 ############################################
-add_library(lammps ${LIB_SOURCES})
-target_link_libraries(lammps ${LAMMPS_LINK_LIBS})
 if(BUILD_SHARED_LIBS)
   set_target_properties(lammps PROPERTIES SOVERSION ${SOVERSION})
   install(TARGETS lammps LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
