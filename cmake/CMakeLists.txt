@@ -80,6 +80,9 @@ endif()
 
 set(LAMMPS_MACHINE "" CACHE STRING "Suffix to append to lmp binary and liblammps (WON'T enable any features automatically")
 mark_as_advanced(LAMMPS_MACHINE)
+if(LAMMPS_MACHINE)
+  set(LAMMPS_MACHINE "_${LAMMPS_MACHINE}")
+endif()
 
 option(CMAKE_VERBOSE_MAKEFILE "Verbose makefile" OFF)
 
@@ -93,7 +96,7 @@ set(DEFAULT_PACKAGES ASPHERE BODY CLASS2 COLLOID COMPRESS CORESHELL DIPOLE GRANU
   KSPACE MANYBODY MC MEAM MISC MOLECULE PERI QEQ
   REAX REPLICA RIGID SHOCK SNAP SRD)
 set(OTHER_PACKAGES KIM PYTHON MSCG MPIIO VORONOI POEMS
-   USER-ATC USER-AWPMD USER-CGDNA
+  USER-ATC USER-AWPMD USER-CGDNA USER-MESO
   USER-CGSDK USER-COLVARS USER-DIFFRACTION USER-DPD USER-DRUDE USER-EFF
   USER-FEP USER-H5MD USER-LB USER-MANIFOLD USER-MEAMC USER-MGPT USER-MISC
   USER-MOLFILE USER-NETCDF USER-PHONON USER-QTB USER-REAXC USER-SMD 
@@ -590,40 +593,38 @@ if(ENABLE_GPU)
 
     elseif(GPU_API STREQUAL "OpenCL")
       find_package(OpenCL REQUIRED)
-      if(OpenCL_FOUND)
-        set(OCL_TUNE "GENERIC" CACHE STRING "OpenCL Device Tuning")
-        set_property(CACHE OCL_TUNE PROPERTY STRINGS INTEL FERMI KEPLER CYPRESS GENERIC)
+      set(OCL_TUNE "GENERIC" CACHE STRING "OpenCL Device Tuning")
+      set_property(CACHE OCL_TUNE PROPERTY STRINGS INTEL FERMI KEPLER CYPRESS GENERIC)
 
-        include(OpenCLUtils)
-        set(OCL_COMMON_HEADERS ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_preprocessor.h ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_aux_fun1.h)
+      include(OpenCLUtils)
+      set(OCL_COMMON_HEADERS ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_preprocessor.h ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_aux_fun1.h)
 
-        file(GLOB GPU_LIB_CU ${LAMMPS_LIB_SOURCE_DIR}/gpu/*.cu)
-        list(REMOVE_ITEM GPU_LIB_CU ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_gayberne.cu ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_gayberne_lj.cu)
+      file(GLOB GPU_LIB_CU ${LAMMPS_LIB_SOURCE_DIR}/gpu/*.cu)
+      list(REMOVE_ITEM GPU_LIB_CU ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_gayberne.cu ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_gayberne_lj.cu)
 
-        foreach(GPU_KERNEL ${GPU_LIB_CU})
-            get_filename_component(basename ${GPU_KERNEL} NAME_WE)
-            string(SUBSTRING ${basename} 4 -1 KERNEL_NAME)
-            GenerateOpenCLHeader(${KERNEL_NAME} ${CMAKE_CURRENT_BINARY_DIR}/gpu/${KERNEL_NAME}_cl.h ${OCL_COMMON_HEADERS} ${GPU_KERNEL})
-            list(APPEND GPU_LIB_SOURCES ${CMAKE_CURRENT_BINARY_DIR}/gpu/${KERNEL_NAME}_cl.h)
-        endforeach()
+      foreach(GPU_KERNEL ${GPU_LIB_CU})
+          get_filename_component(basename ${GPU_KERNEL} NAME_WE)
+          string(SUBSTRING ${basename} 4 -1 KERNEL_NAME)
+          GenerateOpenCLHeader(${KERNEL_NAME} ${CMAKE_CURRENT_BINARY_DIR}/gpu/${KERNEL_NAME}_cl.h ${OCL_COMMON_HEADERS} ${GPU_KERNEL})
+          list(APPEND GPU_LIB_SOURCES ${CMAKE_CURRENT_BINARY_DIR}/gpu/${KERNEL_NAME}_cl.h)
+      endforeach()
 
-        GenerateOpenCLHeader(gayberne ${CMAKE_CURRENT_BINARY_DIR}/gpu/gayberne_cl.h ${OCL_COMMON_HEADERS} ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_ellipsoid_extra.h ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_gayberne.cu)
-        GenerateOpenCLHeader(gayberne_lj ${CMAKE_CURRENT_BINARY_DIR}/gpu/gayberne_lj_cl.h ${OCL_COMMON_HEADERS} ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_ellipsoid_extra.h ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_gayberne_lj.cu)
-        list(APPEND GPU_LIB_SOURCES ${CMAKE_CURRENT_BINARY_DIR}/gpu/gayberne_cl.h ${CMAKE_CURRENT_BINARY_DIR}/gpu/gayberne_lj_cl.h)
+      GenerateOpenCLHeader(gayberne ${CMAKE_CURRENT_BINARY_DIR}/gpu/gayberne_cl.h ${OCL_COMMON_HEADERS} ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_ellipsoid_extra.h ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_gayberne.cu)
+      GenerateOpenCLHeader(gayberne_lj ${CMAKE_CURRENT_BINARY_DIR}/gpu/gayberne_lj_cl.h ${OCL_COMMON_HEADERS} ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_ellipsoid_extra.h ${LAMMPS_LIB_SOURCE_DIR}/gpu/lal_gayberne_lj.cu)
+      list(APPEND GPU_LIB_SOURCES ${CMAKE_CURRENT_BINARY_DIR}/gpu/gayberne_cl.h ${CMAKE_CURRENT_BINARY_DIR}/gpu/gayberne_lj_cl.h)
 
-        add_library(gpu STATIC ${GPU_LIB_SOURCES})
-        target_link_libraries(gpu ${OpenCL_LIBRARIES})
-        target_include_directories(gpu PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gpu ${OpenCL_INCLUDE_DIRS})
-        target_compile_definitions(gpu PRIVATE -D_${GPU_PREC} -DMPI_GERYON -DUCL_NO_EXIT)
-        target_compile_definitions(gpu PRIVATE -DUSE_OPENCL)
+      add_library(gpu STATIC ${GPU_LIB_SOURCES})
+      target_link_libraries(gpu ${OpenCL_LIBRARIES})
+      target_include_directories(gpu PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/gpu ${OpenCL_INCLUDE_DIRS})
+      target_compile_definitions(gpu PRIVATE -D_${GPU_PREC} -DMPI_GERYON -DUCL_NO_EXIT)
+      target_compile_definitions(gpu PRIVATE -DUSE_OPENCL)
 
-        list(APPEND LAMMPS_LINK_LIBS gpu)
+      list(APPEND LAMMPS_LINK_LIBS gpu)
 
-        add_executable(ocl_get_devices ${LAMMPS_LIB_SOURCE_DIR}/gpu/geryon/ucl_get_devices.cpp)
-        target_compile_definitions(ocl_get_devices PRIVATE -DUCL_OPENCL)
-        target_link_libraries(ocl_get_devices PRIVATE ${OpenCL_LIBRARIES})
-        target_include_directories(ocl_get_devices PRIVATE ${OpenCL_INCLUDE_DIRS})
-      endif()
+      add_executable(ocl_get_devices ${LAMMPS_LIB_SOURCE_DIR}/gpu/geryon/ucl_get_devices.cpp)
+      target_compile_definitions(ocl_get_devices PRIVATE -DUCL_OPENCL)
+      target_link_libraries(ocl_get_devices PRIVATE ${OpenCL_LIBRARIES})
+      target_include_directories(ocl_get_devices PRIVATE ${OpenCL_INCLUDE_DIRS})
     endif()
 
     # GPU package
@@ -656,20 +657,21 @@ target_include_directories(lammps PRIVATE ${LAMMPS_SOURCE_DIR} ${LAMMPS_STYLE_HE
 ###########################################
 # Actually add executable and lib to build
 ############################################
-set_target_properties(lammps PROPERTIES SOVERSION ${SOVERSION} OUTPUT_NAME lammps$<$<BOOL:${LAMMPS_MACHINE}>:_>${LAMMPS_MACHINE})
-if(INSTALL_LIB)
+set_target_properties(lammps PROPERTIES OUTPUT_NAME lammps${LAMMPS_MACHINE})
+if(BUILD_SHARED_LIBS)
+  set_target_properties(lammps PROPERTIES SOVERSION ${SOVERSION})
   install(TARGETS lammps LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
   install(FILES ${LAMMPS_SOURCE_DIR}/library.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/lammps)
-  configure_file(pkgconfig/liblammps.pc.in ${CMAKE_CURRENT_BINARY_DIR}/liblammps.pc @ONLY)
-  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/liblammps.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+  configure_file(pkgconfig/liblammps.pc.in ${CMAKE_CURRENT_BINARY_DIR}/liblammps${LAMMPS_MACHINE}.pc @ONLY)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/liblammps${LAMMPS_MACHINE}.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 endif()
 
 add_executable(lmp ${LMP_SOURCES})
 target_link_libraries(lmp lammps)
-set_target_properties(lmp PROPERTIES OUTPUT_NAME lmp$<$<BOOL:${LAMMPS_MACHINE}>:_>${LAMMPS_MACHINE})
+set_target_properties(lmp PROPERTIES OUTPUT_NAME lmp${LAMMPS_MACHINE})
 install(TARGETS lmp DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(ENABLE_TESTING)
-  add_test(ShowHelp lmp$<$<BOOL:${LAMMPS_MACHINE}>:_>${LAMMPS_MACHINE} -help)
+  add_test(ShowHelp lmp${LAMMPS_MACHINE} -help)
 endif()
 
 ##################################
