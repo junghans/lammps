@@ -597,8 +597,11 @@ target_include_directories(lammps PRIVATE ${LAMMPS_SOURCE_DIR} ${LAMMPS_STYLE_HE
 ###########################################
 # Actually add executable and lib to build
 ############################################
-if(BUILD_SHARED_LIBS)
-  set_target_properties(lammps PROPERTIES SOVERSION ${SOVERSION})
+set(LAMMPS_MACHINE "" CACHE STRING "Suffix to append to lmp binary and liblammps")
+mark_as_advanced(LAMMPS_MACHINE)
+
+set_target_properties(lammps PROPERTIES SOVERSION ${SOVERSION} OUTPUT_NAME lammps$<$<BOOL:${LAMMPS_MACHINE}>:_>${LAMMPS_MACHINE})
+if(INSTALL_LIB)
   install(TARGETS lammps LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
   install(FILES ${LAMMPS_SOURCE_DIR}/library.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/lammps)
   configure_file(pkgconfig/liblammps.pc.in ${CMAKE_CURRENT_BINARY_DIR}/liblammps.pc @ONLY)
@@ -607,9 +610,10 @@ endif()
 
 add_executable(lmp ${LMP_SOURCES})
 target_link_libraries(lmp lammps)
+set_target_properties(lmp PROPERTIES OUTPUT_NAME lmp$<$<BOOL:${LAMMPS_MACHINE}>:_>${LAMMPS_MACHINE})
 install(TARGETS lmp DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(ENABLE_TESTING)
-  add_test(ShowHelp ${CMAKE_CURRENT_BINARY_DIR}/lmp -help)
+  add_test(ShowHelp lmp${LAMMPS_MACHINE} -help)
 endif()
 
 ##################################
