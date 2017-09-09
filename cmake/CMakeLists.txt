@@ -9,6 +9,7 @@ set(SOVERSION 0)
 set(LAMMPS_SOURCE_DIR ${CMAKE_SOURCE_DIR}/../src)
 set(LAMMPS_LIB_SOURCE_DIR ${CMAKE_SOURCE_DIR}/../lib)
 set(LAMMPS_LIB_BINARY_DIR ${CMAKE_BINARY_DIR}/lib)
+set(LAMMPS_STYLE_HEADERS_DIR ${CMAKE_CURRENT_BINARY_DIR}/styles)
 
 #To not conflict with old Makefile build system, we build everything here
 file(GLOB LIB_SOURCES ${LAMMPS_SOURCE_DIR}/*.cpp)
@@ -146,13 +147,13 @@ foreach(PKG ${DEFAULT_PACKAGES} ${OTHER_PACKAGES})
     # detects styles in package and adds them to global list
     RegisterStyles(${${PKG}_SOURCES_DIR})
 
-    file(GLOB ${PKG}_SOURCES ${${PKG}_SOURCES_DIR}/*.cpp)
     #always static never installed
     add_library(pkg_${PKG} STATIC ${${PKG}_SOURCES})
     #hide them from user
     set_target_properties(pkg_${PKG} PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${LAMMPS_LIB_BINARY_DIR})
     target_link_libraries(lammps pkg_${PKG})
     target_include_directories(pkg_${PKG} PUBLIC ${${PKG}_SOURCES_DIR})
+    target_include_directories(pkg_${PKG} PRIVATE ${LAMMPS_SOURCE_DIR} ${LAMMPS_STYLE_HEADERS_DIR})
   endif()
 endforeach()
 
@@ -455,7 +456,6 @@ if(ENABLE_KOKKOS)
                           ${LAMMPS_LIB_KOKKOS_SRC_DIR}/containers/src
                           ${LAMMPS_LIB_KOKKOS_SRC_DIR}/algorithms/src
                           ${LAMMPS_LIB_KOKKOS_BIN_DIR})
-  target_include_directories(pkg_KOKKOS PRIVATE ${Kokkos_INCLUDE_DIRS})
 
   set(KOKKOS_PKG_SOURCES_DIR ${LAMMPS_SOURCE_DIR}/KOKKOS)
   set(KOKKOS_PKG_SOURCES ${KOKKOS_PKG_SOURCES_DIR}/kokkos.cpp
@@ -480,7 +480,8 @@ if(ENABLE_KOKKOS)
   set_target_properties(pkg_KOKKOS PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${LAMMPS_LIB_BINARY_DIR})
   target_link_libraries(pkg_KOKKOS kokkos)
   target_link_libraries(lammps pkg_KOKKOS)
-  target_include_directories(pkg_KOKKOS PUBLIC ${KOKKOS_PKG_SOURCES_DIR})
+  target_include_directories(pkg_KOKKOS PUBLIC ${KOKKOS_PKG_SOURCES_DIR} ${Kokkos_INCLUDE_DIRS})
+  target_include_directories(pkg_KOKKOS PRIVATE ${LAMMPS_SOURCE_DIR} ${LAMMPS_STYLE_HEADERS_DIR})
 endif()
 
 if(ENABLE_OPT)
@@ -650,7 +651,6 @@ endif()
 # Generate style headers based on global list of
 # styles registered during package selection           
 ######################################################
-set(LAMMPS_STYLE_HEADERS_DIR ${CMAKE_CURRENT_BINARY_DIR}/styles)
 
 GenerateStyleHeaders(${LAMMPS_STYLE_HEADERS_DIR})
 
