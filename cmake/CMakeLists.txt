@@ -584,7 +584,6 @@ if(ENABLE_GPU)
                     ${GPU_SOURCES_DIR}/fix_gpu.h
                     ${GPU_SOURCES_DIR}/fix_gpu.cpp)
     FindStyleHeaders(${GPU_SOURCES_DIR} FIX_CLASS fix_ FIX)
-    target_include_directories(pkg_GPU PRIVATE ${GPU_SOURCES_DIR})
 
     set_property(GLOBAL PROPERTY "GPU_SOURCES" "${GPU_SOURCES}")
 
