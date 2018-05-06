@@ -1,0 +1,28 @@
+language: cpp
+
+sudo: required
+
+services:
+- docker
+
+script:
+  - cp -vr docker ${HOME}/docker
+  - cd ../../
+  - mv -v ${TRAVIS_REPO_SLUG} $HOME/docker/
+  - cp -r $HOME/.ccache ${HOME}/docker/ccache
+  - docker build -t ${TRAVIS_REPO_SLUG}:latest ${HOME}/docker/ &&
+    rm -rf ${HOME}/.ccache &&
+    CON=$(docker run -d ${TRAVIS_REPO_SLUG}:latest /bin/bash) &&
+    docker cp ${CON}:/home/user/.ccache ${HOME}/
+
+after_success:
+  - if [[ ${DOCKER_USERNAME} && ${DOCKER_PASSWORD} && ${TRAVIS_BRANCH} == master && ${TRAVIS_PULL_REQUEST} == false ]]; then
+      docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD";
+      docker push "${TRAVIS_REPO_SLUG}:latest"; fi;
+    fi
+
+cache:
+  ccache: true
+
+compiler:
+  - gcc
