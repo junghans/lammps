@@ -18,7 +18,7 @@ jobs:
         cxx: ["g++", "clang++"]
         cmake_build_type: ["Release", "Debug"]
     runs-on: ubuntu-latest
-    image: lammps/buildenv:${{ matrix.distro }}
+    container: lammps/buildenv:${{ matrix.distro }}
     env:
       CCACHE_HASH: ccache-${{ matrix.set }}-${{ matrix.cxx }}-${{ matrix.cmake_build_type }}
     steps:
