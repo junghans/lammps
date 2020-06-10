@@ -20,13 +20,13 @@ jobs:
     runs-on: ubuntu-latest
     container: lammps/buildenv:${{ matrix.distro }}
     env:
-      CCACHE_HASH: ccache-${{ matrix.set }}-${{ matrix.cxx }}-${{ matrix.cmake_build_type }}
+      CCACHE_HASH: ccache-${{ matrix.distro}}-${{ matrix.set }}-${{ matrix.cxx }}-${{ matrix.cmake_build_type }}
     steps:
       - name: Setup
         id: setup
         run: |
           echo "::set-output name=time::$(date +%s)"
-          if ${{ matrix.cxx == 'clang++' }}; then echo "::set-output name=cc::clang"; else "::set-output name=cc::gcc"; fi
+          if ${{ matrix.cxx == 'clang++' }}; then echo "::set-output name=cc::clang"; else echo "::set-output name=cc::gcc"; fi
       - uses: actions/cache@v2
         with:
           path: ~/.ccache
@@ -36,6 +36,7 @@ jobs:
       - name: CMake
         run: cmake -B builddir -C cmake/presets/${{ matrix.set }}.cmake -DENABLE_TESTING=ON
           -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_C_COMPILER=${{ steps.setup.outputs.cc }}
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} 
           cmake
       - name: Build
