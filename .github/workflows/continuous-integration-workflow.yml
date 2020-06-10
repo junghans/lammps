@@ -27,6 +27,7 @@ jobs:
         run: |
           echo "::set-output name=time::$(date +%s)"
           if ${{ matrix.cxx == 'clang++' }}; then echo "::set-output name=cc::clang"; else echo "::set-output name=cc::gcc"; fi
+          if ${{ matrix.distro == 'centos7' }}; then echo "::set-output name=cmake::cmake3"; else echo "::set-output name=cmake::cmake"; fi
       - uses: actions/cache@v2
         with:
           path: ~/.ccache
@@ -34,7 +35,7 @@ jobs:
           restore-keys: ${{ env.CCACHE_HASH }}
       - uses: actions/checkout@master
       - name: CMake
-        run: cmake -B builddir -C cmake/presets/${{ matrix.set }}.cmake -DENABLE_TESTING=ON
+        run: ${{ steps.setup.outputs.cmake }} -B builddir -C cmake/presets/${{ matrix.set }}.cmake -DENABLE_TESTING=ON
           -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_C_COMPILER=${{ steps.setup.outputs.cc }}
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} 
