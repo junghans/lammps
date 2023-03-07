@@ -94,7 +94,7 @@ else()
                           ${LAMMPS_LIB_KOKKOS_SRC_DIR}/containers/src
                           ${LAMMPS_LIB_KOKKOS_SRC_DIR}/algorithms/src
                           ${LAMMPS_LIB_KOKKOS_BIN_DIR})
-  target_include_directories(lammps PRIVATE ${Kokkos_INCLUDE_DIRS})
+  target_include_directories(lammps PUBLIC ${Kokkos_INCLUDE_DIRS})
   target_link_libraries(lammps PUBLIC kokkos)
   if(BUILD_SHARED_LIBS_WAS_ON)
     set(BUILD_SHARED_LIBS ON)
