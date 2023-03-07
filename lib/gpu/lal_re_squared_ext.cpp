@@ -15,7 +15,7 @@
 
 #include <iostream>
 #include <cassert>
-#include <math.h>
+#include <cmath>
 
 #include "lal_re_squared.h"
 
@@ -80,7 +80,7 @@ int re_gpu_init(const int ntypes, double **shape, double **well, double **cutsq,
                         host_lj4, offset, special_lj,  inum, nall,
                         max_nbors, maxspecial, cell_size, gpu_split, screen);
 
-    REMF.device->gpu_barrier();
+    REMF.device->serialize_init();
     if (message)
       fprintf(screen,"Done.\n");
   }

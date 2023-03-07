@@ -1,7 +1,8 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   http://lammps.sandia.gov, Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -11,16 +12,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstring>
-#include <cstdlib>
 #include "fix_nve_asphere_noforce.h"
 #include "math_extra.h"
 #include "atom.h"
 #include "atom_vec_ellipsoid.h"
-#include "group.h"
-#include "update.h"
-#include "memory.h"
 #include "error.h"
 
 using namespace LAMMPS_NS;
@@ -42,7 +37,7 @@ void FixNVEAsphereNoforce::init()
 {
   // error check
 
-  avec = (AtomVecEllipsoid *) atom->style_match("ellipsoid");
+  avec = dynamic_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
   if (!atom->ellipsoid_flag)
     error->all(FLERR,"Fix nve/asphere/noforce requires atom style ellipsoid");
 
@@ -64,7 +59,7 @@ void FixNVEAsphereNoforce::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixNVEAsphereNoforce::initial_integrate(int vflag)
+void FixNVEAsphereNoforce::initial_integrate(int /*vflag*/)
 {
   AtomVecEllipsoid::Bonus *bonus;
   if (avec) bonus = avec->bonus;

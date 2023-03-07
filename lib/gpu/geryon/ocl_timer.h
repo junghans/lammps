@@ -27,10 +27,14 @@
 #include "ocl_macros.h"
 #include "ocl_device.h"
 
+#ifndef GERYON_NO_OCL_MARKERS
 #ifdef CL_VERSION_1_2
-#define UCL_OCL_MARKER(cq,event) clEnqueueMarkerWithWaitList(cq,0,NULL,event)
+#define UCL_OCL_MARKER(cq,event) clEnqueueMarkerWithWaitList(cq,0,nullptr,event)
 #else
 #define UCL_OCL_MARKER clEnqueueMarker
+#endif
+#else
+#define UCL_OCL_MARKER(cq,event)
 #endif
 
 namespace ucl_opencl {
@@ -38,8 +42,10 @@ namespace ucl_opencl {
 /// Class for timing OpenCL events
 class UCL_Timer {
  public:
-  inline UCL_Timer() : _total_time(0.0f), _initialized(false) { }
-  inline UCL_Timer(UCL_Device &dev) : _total_time(0.0f), _initialized(false)
+  inline UCL_Timer() : start_event(nullptr), stop_event(nullptr), _total_time(0.0f),
+                       _initialized(false), has_measured_time(false) { }
+  inline UCL_Timer(UCL_Device &dev) : start_event(nullptr), stop_event(nullptr), _total_time(0.0f),
+                                      _initialized(false), has_measured_time(false)
     { init(dev); }
 
   inline ~UCL_Timer() { clear(); }
@@ -48,9 +54,14 @@ class UCL_Timer {
   /** \note init() must be called to reuse timer after a clear() **/
   inline void clear() {
     if (_initialized) {
+      if (has_measured_time) {
+        #ifndef GERYON_NO_OCL_MARKERS
+        clReleaseEvent(start_event);
+        clReleaseEvent(stop_event);
+        #endif
+        has_measured_time = false;
+      }
       CL_DESTRUCT_CALL(clReleaseCommandQueue(_cq));
-      clReleaseEvent(start_event);
-      clReleaseEvent(stop_event);
       _initialized=false;
       _total_time=0.0;
     }
@@ -60,31 +71,63 @@ class UCL_Timer {
   inline void init(UCL_Device &dev) { init(dev,dev.cq()); }
 
   /// Initialize command queue for timing
-  inline void init(UCL_Device &dev, command_queue &cq) {
+  inline void init(UCL_Device & /*dev*/, command_queue &cq) {
     clear();
-    t_factor=dev.timer_resolution()/1000000000.0;
     _cq=cq;
     clRetainCommandQueue(_cq);
     _initialized=true;
+    has_measured_time = false;
   }
 
   /// Start timing on default command queue
-  inline void start() { UCL_OCL_MARKER(_cq,&start_event); }
+  inline void start() {
+    if (has_measured_time) {
+      #ifndef GERYON_NO_OCL_MARKERS
+      clReleaseEvent(start_event);
+      clReleaseEvent(stop_event);
+      #endif
+      has_measured_time = false;
+    }
+    UCL_OCL_MARKER(_cq,&start_event);
+  }
 
   /// Stop timing on default command queue
-  inline void stop() { UCL_OCL_MARKER(_cq,&stop_event); }
+  inline void stop() {
+    UCL_OCL_MARKER(_cq,&stop_event);
+    has_measured_time = true;
+  }
 
   /// Block until the start event has been reached on device
-  inline void sync_start()
-    { CL_SAFE_CALL(clWaitForEvents(1,&start_event)); }
+  inline void sync_start() {
+    #ifndef GERYON_NO_OCL_MARKERS
+    CL_SAFE_CALL(clWaitForEvents(1,&start_event));
+    if (has_measured_time) {
+      clReleaseEvent(start_event);
+      clReleaseEvent(stop_event);
+      has_measured_time = false;
+    }
+    #else
+    CL_SAFE_CALL(clFinish(_cq));
+    has_measured_time = false;
+    #endif
+  }
 
   /// Block until the stop event has been reached on device
-  inline void sync_stop()
-    { CL_SAFE_CALL(clWaitForEvents(1,&stop_event)); }
+  inline void sync_stop() {
+    #ifndef GERYON_NO_OCL_MARKERS
+    CL_SAFE_CALL(clWaitForEvents(1,&stop_event));
+    #else
+    CL_SAFE_CALL(clFinish(_cq));
+    #endif
+    has_measured_time = true;
+  }
 
   /// Set the time elapsed to zero (not the total_time)
-  inline void zero()
-    { UCL_OCL_MARKER(_cq,&start_event); UCL_OCL_MARKER(_cq,&stop_event); }
+  inline void zero() {
+    has_measured_time = false;
+    UCL_OCL_MARKER(_cq,&start_event);
+    UCL_OCL_MARKER(_cq,&stop_event);
+  }
 
   /// Set the total time to zero
   inline void zero_total() { _total_time=0.0; }
@@ -99,32 +142,42 @@ class UCL_Timer {
 
   /// Return the time (ms) of last start to stop - Forces synchronization
   inline double time() {
+    if(!has_measured_time) return 0.0;
+    #ifndef GERYON_NO_OCL_MARKERS
     cl_ulong tstart,tend;
     CL_SAFE_CALL(clWaitForEvents(1,&stop_event));
     CL_SAFE_CALL(clGetEventProfilingInfo(stop_event,
                                          CL_PROFILING_COMMAND_START,
-                                         sizeof(cl_ulong), &tend, NULL));
+                                         sizeof(cl_ulong), &tend, nullptr));
     CL_SAFE_CALL(clGetEventProfilingInfo(start_event,
                                          CL_PROFILING_COMMAND_END,
-                                         sizeof(cl_ulong), &tstart, NULL));
-    return (tend-tstart)*t_factor;
+                                         sizeof(cl_ulong), &tstart, nullptr));
+    clReleaseEvent(start_event);
+    clReleaseEvent(stop_event);
+    has_measured_time = false;
+    return (tend-tstart)*1e-6;
+    #else
+    CL_SAFE_CALL(clFinish(_cq));
+    has_measured_time = false;
+    return 0.0;
+    #endif
   }
 
   /// Return the time (s) of last start to stop - Forces synchronization
-  inline double seconds() { return time()/1000.0; }
+  inline double seconds() { return time()*1e-3; }
 
   /// Return the total time in ms
   inline double total_time() { return _total_time; }
 
   /// Return the total time in seconds
-  inline double total_seconds() { return _total_time/1000.0; }
+  inline double total_seconds() { return _total_time*1e-3; }
 
  private:
   cl_event start_event, stop_event;
   cl_command_queue _cq;
   double _total_time;
   bool _initialized;
-  double t_factor;
+  bool has_measured_time;
 };
 
 } // namespace

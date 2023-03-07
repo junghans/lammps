@@ -1,7 +1,8 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   http://lammps.sandia.gov, Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -16,25 +17,21 @@
    simpler force assignment added by Rolf Isele-Holder (Aachen University)
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include "pair_lj_cut_tip4p_long.h"
+
 #include "angle.h"
 #include "atom.h"
 #include "bond.h"
 #include "comm.h"
 #include "domain.h"
 #include "force.h"
-#include "kspace.h"
-#include "update.h"
-#include "respa.h"
 #include "neighbor.h"
 #include "neigh_list.h"
-#include "neigh_request.h"
 #include "memory.h"
 #include "error.h"
+
+#include <cmath>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 
@@ -59,8 +56,8 @@ PairLJCutTIP4PLong::PairLJCutTIP4PLong(LAMMPS *lmp) :
   writedata = 1;
 
   nmax = 0;
-  hneigh = NULL;
-  newsite = NULL;
+  hneigh = nullptr;
+  newsite = nullptr;
 
   // TIP4P cannot compute virial as F dot r
   // due to finding bonded H atoms which are not near O atom
@@ -94,8 +91,7 @@ void PairLJCutTIP4PLong::compute(int eflag, int vflag)
   double rsq;
 
   evdwl = ecoul = 0.0;
-  if (eflag || vflag) ev_setup(eflag,vflag);
-  else evflag = vflag_fdotr = 0;
+  ev_init(eflag,vflag);
 
   // reallocate hneigh & newsite if necessary
   // initialize hneigh[0] to -1 on steps when reneighboring occurred
@@ -435,15 +431,15 @@ void PairLJCutTIP4PLong::settings(int narg, char **arg)
 {
   if (narg < 6 || narg > 7) error->all(FLERR,"Illegal pair_style command");
 
-  typeO = force->inumeric(FLERR,arg[0]);
-  typeH = force->inumeric(FLERR,arg[1]);
-  typeB = force->inumeric(FLERR,arg[2]);
-  typeA = force->inumeric(FLERR,arg[3]);
-  qdist = force->numeric(FLERR,arg[4]);
+  typeO = utils::inumeric(FLERR,arg[0],false,lmp);
+  typeH = utils::inumeric(FLERR,arg[1],false,lmp);
+  typeB = utils::inumeric(FLERR,arg[2],false,lmp);
+  typeA = utils::inumeric(FLERR,arg[3],false,lmp);
+  qdist = utils::numeric(FLERR,arg[4],false,lmp);
 
-  cut_lj_global = force->numeric(FLERR,arg[5]);
+  cut_lj_global = utils::numeric(FLERR,arg[5],false,lmp);
   if (narg == 6) cut_coul = cut_lj_global;
-  else cut_coul = force->numeric(FLERR,arg[6]);
+  else cut_coul = utils::numeric(FLERR,arg[6],false,lmp);
 
   // reset cutoffs that have been explicitly set
 
@@ -469,18 +465,26 @@ void PairLJCutTIP4PLong::init_style()
   if (!atom->q_flag)
     error->all(FLERR,
                "Pair style lj/cut/tip4p/long requires atom attribute q");
-  if (force->bond == NULL)
+  if (force->bond == nullptr)
     error->all(FLERR,"Must use a bond style with TIP4P potential");
-  if (force->angle == NULL)
+  if (force->angle == nullptr)
     error->all(FLERR,"Must use an angle style with TIP4P potential");
 
   PairLJCutCoulLong::init_style();
 
   // set alpha parameter
 
-  double theta = force->angle->equilibrium_angle(typeA);
-  double blen = force->bond->equilibrium_distance(typeB);
+  const double theta = force->angle->equilibrium_angle(typeA);
+  const double blen = force->bond->equilibrium_distance(typeB);
   alpha = qdist / (cos(0.5*theta) * blen);
+
+  const double mincut = cut_coul + qdist + blen + neighbor->skin;
+  if (comm->get_comm_cutoff() < mincut) {
+    if (comm->me == 0)
+      error->warning(FLERR, "Increasing communication cutoff to {:.8} for TIP4P pair style",
+                     mincut);
+    comm->cutghostuser = mincut;
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -534,19 +538,19 @@ void PairLJCutTIP4PLong::write_restart_settings(FILE *fp)
 void PairLJCutTIP4PLong::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
-    fread(&typeO,sizeof(int),1,fp);
-    fread(&typeH,sizeof(int),1,fp);
-    fread(&typeB,sizeof(int),1,fp);
-    fread(&typeA,sizeof(int),1,fp);
-    fread(&qdist,sizeof(double),1,fp);
+    utils::sfread(FLERR,&typeO,sizeof(int),1,fp,nullptr,error);
+    utils::sfread(FLERR,&typeH,sizeof(int),1,fp,nullptr,error);
+    utils::sfread(FLERR,&typeB,sizeof(int),1,fp,nullptr,error);
+    utils::sfread(FLERR,&typeA,sizeof(int),1,fp,nullptr,error);
+    utils::sfread(FLERR,&qdist,sizeof(double),1,fp,nullptr,error);
 
-    fread(&cut_lj_global,sizeof(double),1,fp);
-    fread(&cut_coul,sizeof(double),1,fp);
-    fread(&offset_flag,sizeof(int),1,fp);
-    fread(&mix_flag,sizeof(int),1,fp);
-    fread(&tail_flag,sizeof(int),1,fp);
-    fread(&ncoultablebits,sizeof(int),1,fp);
-    fread(&tabinner,sizeof(double),1,fp);
+    utils::sfread(FLERR,&cut_lj_global,sizeof(double),1,fp,nullptr,error);
+    utils::sfread(FLERR,&cut_coul,sizeof(double),1,fp,nullptr,error);
+    utils::sfread(FLERR,&offset_flag,sizeof(int),1,fp,nullptr,error);
+    utils::sfread(FLERR,&mix_flag,sizeof(int),1,fp,nullptr,error);
+    utils::sfread(FLERR,&tail_flag,sizeof(int),1,fp,nullptr,error);
+    utils::sfread(FLERR,&ncoultablebits,sizeof(int),1,fp,nullptr,error);
+    utils::sfread(FLERR,&tabinner,sizeof(double),1,fp,nullptr,error);
   }
 
   MPI_Bcast(&typeO,1,MPI_INT,0,world);
@@ -599,7 +603,7 @@ void *PairLJCutTIP4PLong::extract(const char *str, int &dim)
   dim = 2;
   if (strcmp(str,"epsilon") == 0) return (void *) epsilon;
   if (strcmp(str,"sigma") == 0) return (void *) sigma;
-  return NULL;
+  return nullptr;
 }
 
 /* ----------------------------------------------------------------------
@@ -608,8 +612,8 @@ void *PairLJCutTIP4PLong::extract(const char *str, int &dim)
 
 double PairLJCutTIP4PLong::memory_usage()
 {
-  double bytes = maxeatom * sizeof(double);
-  bytes += maxvatom*6 * sizeof(double);
-  bytes += 2 * nmax * sizeof(double);
+  double bytes = (double)maxeatom * sizeof(double);
+  bytes += (double)maxvatom*6 * sizeof(double);
+  bytes += (double)2 * nmax * sizeof(double);
   return bytes;
 }

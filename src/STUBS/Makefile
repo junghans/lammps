@@ -11,24 +11,24 @@ SHELL = /bin/sh
 
 # Files
 
-SRC =		mpi.c
+SRC =		mpi.cpp
 INC =		mpi.h
 
 # Definitions
 
 EXE =		libmpi_stubs.a
-OBJ = 		$(SRC:.c=.o)
+OBJ = 		$(SRC:.cpp=.o)
 
 # System-specific settings
 
 CC =		g++
-CCFLAGS =	-O -fPIC -I. # add -I to insure mpi.h from this dir is included
+CCFLAGS =	-O -fPIC -I. # add -I to ensure mpi.h from this dir is included
 ARCHIVE =	ar
 ARCHFLAG =	rs
 
 # Targets
 
-lib:	$(OBJ)
+$(EXE):	$(OBJ)
 	$(ARCHIVE) $(ARCHFLAG) $(EXE) $(OBJ)
 
 clean:
@@ -36,9 +36,9 @@ clean:
 
 # Compilation rules
 
-.c.o:
+.cpp.o:
 	$(CC) $(CCFLAGS) -c $<
 
 # Individual dependencies
 
-$(OBJ):	$(INC)
+$(OBJ):	$(INC) ../version.h

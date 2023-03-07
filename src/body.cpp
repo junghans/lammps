@@ -1,7 +1,7 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   http://lammps.sandia.gov, Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -11,28 +11,22 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstdlib>
-#include <cstring>
 #include "body.h"
-#include "error.h"
 
 using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-Body::Body(LAMMPS *lmp, int narg, char **arg) : Pointers(lmp)
+Body::Body(LAMMPS *lmp, int /*narg*/, char **arg) : Pointers(lmp)
 {
-  int n = strlen(arg[0]) + 1;
-  style = new char[n];
-  strcpy(style,arg[0]);
-  icp = NULL;
-  dcp = NULL;
+  style = utils::strdup(arg[0]);
+  icp = nullptr;
+  dcp = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */
 
 Body::~Body()
 {
-  delete [] style;
+  delete[] style;
 }

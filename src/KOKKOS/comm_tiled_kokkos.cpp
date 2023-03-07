@@ -1,7 +1,8 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   http://lammps.sandia.gov, Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -11,23 +12,11 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <cstring>
 #include "comm_tiled_kokkos.h"
-#include "comm_brick.h"
+
 #include "atom_kokkos.h"
-#include "atom_vec.h"
-#include "domain.h"
-#include "force.h"
-#include "pair.h"
-#include "neighbor.h"
-#include "modify.h"
-#include "fix.h"
-#include "compute.h"
-#include "output.h"
-#include "dump.h"
-#include "memory_kokkos.h"
-#include "error.h"
 #include "atom_masks.h"
+#include "atom_vec.h"
 
 using namespace LAMMPS_NS;
 
@@ -39,15 +28,9 @@ using namespace LAMMPS_NS;
 
 #define DELTA_PROCS 16
 
-enum{SINGLE,MULTI};               // same as in Comm
-enum{LAYOUT_UNIFORM,LAYOUT_NONUNIFORM,LAYOUT_TILED};    // several files
-
 /* ---------------------------------------------------------------------- */
 
-CommTiledKokkos::CommTiledKokkos(LAMMPS *lmp) : CommTiled(lmp)
-{
-
-}
+CommTiledKokkos::CommTiledKokkos(LAMMPS *_lmp) : CommTiled(_lmp) {}
 
 /* ---------------------------------------------------------------------- */
 //IMPORTANT: we *MUST* pass "*oldcomm" to the Comm initializer here, as
@@ -56,20 +39,9 @@ CommTiledKokkos::CommTiledKokkos(LAMMPS *lmp) : CommTiled(lmp)
 //           The call to Comm::copy_arrays() then converts the shallow copy
 //           into a deep copy of the class with the new layout.
 
-CommTiledKokkos::CommTiledKokkos(LAMMPS *lmp, Comm *oldcomm) : CommTiled(lmp,oldcomm)
-{
-
-}
+CommTiledKokkos::CommTiledKokkos(LAMMPS *_lmp, Comm *oldcomm) : CommTiled(_lmp,oldcomm) {}
 
 /* ---------------------------------------------------------------------- */
-
-CommTiledKokkos::~CommTiledKokkos()
-{
-
-}
-
-/* ---------------------------------------------------------------------- */
-
 
 /* ----------------------------------------------------------------------
    forward communication of atom coords every timestep
@@ -116,7 +88,7 @@ void CommTiledKokkos::reverse_comm()
    atoms exchanged with procs that touch sub-box in each of 3 dims
    send out atoms that have left my box, receive ones entering my box
    atoms will be lost if not inside a touching proc's box
-     can happen if atom moves outside of non-periodic bounary
+     can happen if atom moves outside of non-periodic boundary
      or if atom moves more than one proc away
    this routine called before every reneighboring
    for triclinic, atoms must be in lamda coords (0-1) before exchange is called
@@ -151,9 +123,9 @@ void CommTiledKokkos::borders()
    nsize used only to set recv buffer limit
 ------------------------------------------------------------------------- */
 
-void CommTiledKokkos::forward_comm_pair(Pair *pair)
+void CommTiledKokkos::forward_comm(Pair *pair)
 {
-  CommTiled::forward_comm_pair(pair);
+  CommTiled::forward_comm(pair);
 }
 
 /* ----------------------------------------------------------------------
@@ -161,9 +133,9 @@ void CommTiledKokkos::forward_comm_pair(Pair *pair)
    nsize used only to set recv buffer limit
 ------------------------------------------------------------------------- */
 
-void CommTiledKokkos::reverse_comm_pair(Pair *pair)
+void CommTiledKokkos::reverse_comm(Pair *pair)
 {
-  CommTiled::reverse_comm_pair(pair);
+  CommTiled::reverse_comm(pair);
 }
 
 /* ----------------------------------------------------------------------
@@ -175,9 +147,9 @@ void CommTiledKokkos::reverse_comm_pair(Pair *pair)
      some are smaller than max stored in its comm_forward
 ------------------------------------------------------------------------- */
 
-void CommTiledKokkos::forward_comm_fix(Fix *fix, int size)
+void CommTiledKokkos::forward_comm(Fix *fix, int size)
 {
-  CommTiled::forward_comm_fix(fix,size);
+  CommTiled::forward_comm(fix,size);
 }
 
 /* ----------------------------------------------------------------------
@@ -189,21 +161,21 @@ void CommTiledKokkos::forward_comm_fix(Fix *fix, int size)
      some are smaller than max stored in its comm_forward
 ------------------------------------------------------------------------- */
 
-void CommTiledKokkos::reverse_comm_fix(Fix *fix, int size)
+void CommTiledKokkos::reverse_comm(Fix *fix, int size)
 {
-  CommTiled::reverse_comm_fix(fix,size);
+  CommTiled::reverse_comm(fix,size);
 }
 
 /* ----------------------------------------------------------------------
    reverse communication invoked by a Fix with variable size data
-   query fix for all pack sizes to insure buf_send is big enough
-   handshake sizes before irregular comm to insure buf_recv is big enough
+   query fix for all pack sizes to ensure buf_send is big enough
+   handshake sizes before irregular comm to ensure buf_recv is big enough
    NOTE: how to setup one big buf recv with correct offsets ??
 ------------------------------------------------------------------------- */
 
-void CommTiledKokkos::reverse_comm_fix_variable(Fix *fix)
+void CommTiledKokkos::reverse_comm_variable(Fix *fix)
 {
-  CommTiled::reverse_comm_fix_variable(fix);
+  CommTiled::reverse_comm_variable(fix);
 }
 
 /* ----------------------------------------------------------------------
@@ -211,9 +183,9 @@ void CommTiledKokkos::reverse_comm_fix_variable(Fix *fix)
    nsize used only to set recv buffer limit
 ------------------------------------------------------------------------- */
 
-void CommTiledKokkos::forward_comm_compute(Compute *compute)
+void CommTiledKokkos::forward_comm(Compute *compute)
 {
-  CommTiled::forward_comm_compute(compute);
+  CommTiled::forward_comm(compute);
 }
 
 /* ----------------------------------------------------------------------
@@ -221,9 +193,9 @@ void CommTiledKokkos::forward_comm_compute(Compute *compute)
    nsize used only to set recv buffer limit
 ------------------------------------------------------------------------- */
 
-void CommTiledKokkos::reverse_comm_compute(Compute *compute)
+void CommTiledKokkos::reverse_comm(Compute *compute)
 {
-  CommTiled::reverse_comm_compute(compute);
+  CommTiled::reverse_comm(compute);
 }
 
 /* ----------------------------------------------------------------------
@@ -231,9 +203,9 @@ void CommTiledKokkos::reverse_comm_compute(Compute *compute)
    nsize used only to set recv buffer limit
 ------------------------------------------------------------------------- */
 
-void CommTiledKokkos::forward_comm_dump(Dump *dump)
+void CommTiledKokkos::forward_comm(Dump *dump)
 {
-  CommTiled::forward_comm_dump(dump);
+  CommTiled::forward_comm(dump);
 }
 
 /* ----------------------------------------------------------------------
@@ -241,9 +213,9 @@ void CommTiledKokkos::forward_comm_dump(Dump *dump)
    nsize used only to set recv buffer limit
 ------------------------------------------------------------------------- */
 
-void CommTiledKokkos::reverse_comm_dump(Dump *dump)
+void CommTiledKokkos::reverse_comm(Dump *dump)
 {
-  CommTiled::reverse_comm_dump(dump);
+  CommTiled::reverse_comm(dump);
 }
 
 /* ----------------------------------------------------------------------

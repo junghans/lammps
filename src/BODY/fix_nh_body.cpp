@@ -1,7 +1,8 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   http://lammps.sandia.gov, Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -16,15 +17,10 @@
    based on FixNHAsphere
 ------------------------------------------------------------------------- */
 
-#include <cstring>
-#include <cstdlib>
-#include <cmath>
-#include "math_extra.h"
 #include "fix_nh_body.h"
+#include "math_extra.h"
 #include "atom.h"
 #include "atom_vec_body.h"
-#include "group.h"
-#include "memory.h"
 #include "error.h"
 
 using namespace LAMMPS_NS;
@@ -41,7 +37,7 @@ FixNHBody::FixNHBody(LAMMPS *lmp, int narg, char **arg) :
 
 void FixNHBody::init()
 {
-  avec = (AtomVecBody *) atom->style_match("body");
+  avec = dynamic_cast<AtomVecBody *>(atom->style_match("body"));
   if (!avec)
     error->all(FLERR,
                "Compute nvt/nph/npt body requires atom style body");

@@ -1,7 +1,8 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   http://lammps.sandia.gov, Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -15,8 +16,8 @@
    Contributing author: Jonathan Lee (Sandia)
 ------------------------------------------------------------------------- */
 
-#include <cmath>
 #include "fix_wall_lj1043.h"
+#include <cmath>
 #include "atom.h"
 #include "math_const.h"
 

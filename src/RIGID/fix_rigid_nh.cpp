@@ -1,7 +1,8 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   http://lammps.sandia.gov, Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -17,43 +18,42 @@
                Miller et al., J Chem Phys. 116, 8649-8659 (2002)
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstdio>
-#include <cstring>
 #include "fix_rigid_nh.h"
-#include "math_extra.h"
+
 #include "atom.h"
+#include "comm.h"
 #include "compute.h"
 #include "domain.h"
-#include "update.h"
-#include "modify.h"
-#include "fix_deform.h"
-#include "group.h"
-#include "comm.h"
-#include "force.h"
-#include "kspace.h"
-#include "output.h"
-#include "memory.h"
 #include "error.h"
+#include "fix_deform.h"
+#include "force.h"
+#include "group.h"
+#include "kspace.h"
+#include "math_extra.h"
+#include "memory.h"
+#include "modify.h"
+#include "rigid_const.h"
+#include "update.h"
+
+#include <cmath>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
-
-enum{NONE,XYZ,XY,YZ,XZ};     // same as in FixRigid
-enum{ISO,ANISO,TRICLINIC};   // same as in FixRigid
-
-#define EPSILON 1.0e-7
+using namespace RigidConst;
 
 /* ---------------------------------------------------------------------- */
 
 FixRigidNH::FixRigidNH(LAMMPS *lmp, int narg, char **arg) :
-  FixRigid(lmp, narg, arg), conjqm(NULL), w(NULL),
-  wdti1(NULL), wdti2(NULL), wdti4(NULL), q_t(NULL), q_r(NULL),
-  eta_t(NULL), eta_r(NULL), eta_dot_t(NULL), eta_dot_r(NULL),
-  f_eta_t(NULL), f_eta_r(NULL), q_b(NULL), eta_b(NULL),
-  eta_dot_b(NULL), f_eta_b(NULL), rfix(NULL), id_temp(NULL),
-  id_press(NULL), temperature(NULL), pressure(NULL)
+  FixRigid(lmp, narg, arg), conjqm(nullptr), w(nullptr),
+  wdti1(nullptr), wdti2(nullptr), wdti4(nullptr), q_t(nullptr), q_r(nullptr),
+  eta_t(nullptr), eta_r(nullptr), eta_dot_t(nullptr), eta_dot_r(nullptr),
+  f_eta_t(nullptr), f_eta_r(nullptr), q_b(nullptr), eta_b(nullptr),
+  eta_dot_b(nullptr), f_eta_b(nullptr), rfix(nullptr), id_temp(nullptr),
+  id_press(nullptr), temperature(nullptr), pressure(nullptr)
 {
+  if (tstat_flag || pstat_flag) ecouple_flag = 1;
+
   // error checks: could be moved up to FixRigid
 
   if ((p_flag[0] == 1 && p_period[0] <= 0.0) ||
@@ -111,6 +111,10 @@ FixRigidNH::FixRigidNH(LAMMPS *lmp, int narg, char **arg) :
        p_period[0] != p_period[2]))
     error->all(FLERR,"Invalid fix rigid npt/nph command pressure settings");
 
+  if (p_flag[0]) box_change |= BOX_CHANGE_X;
+  if (p_flag[1]) box_change |= BOX_CHANGE_Y;
+  if (p_flag[2]) box_change |= BOX_CHANGE_Z;
+
   if ((tstat_flag && t_period <= 0.0) ||
       (p_flag[0] && p_period[0] <= 0.0) ||
       (p_flag[1] && p_period[1] <= 0.0) ||
@@ -146,7 +150,7 @@ FixRigidNH::FixRigidNH(LAMMPS *lmp, int narg, char **arg) :
   // rigid body pointers
 
   nrigidfix = 0;
-  rfix = NULL;
+  rfix = nullptr;
 
   vol0 = 0.0;
   t0 = 1.0;
@@ -154,8 +158,8 @@ FixRigidNH::FixRigidNH(LAMMPS *lmp, int narg, char **arg) :
   tcomputeflag = 0;
   pcomputeflag = 0;
 
-  id_temp = NULL;
-  id_press = NULL;
+  id_temp = nullptr;
+  id_press = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -168,7 +172,7 @@ FixRigidNH::~FixRigidNH()
     deallocate_order();
   }
 
-  if (rfix) delete [] rfix;
+  delete[] rfix;
 
   if (tcomputeflag) modify->delete_compute(id_temp);
   delete [] id_temp;
@@ -187,8 +191,6 @@ int FixRigidNH::setmask()
 {
   int mask = 0;
   mask = FixRigid::setmask();
-  if (tstat_flag || pstat_flag) mask |= THERMO_ENERGY;
-
   return mask;
 }
 
@@ -235,8 +237,6 @@ void FixRigidNH::init()
   }
 
   g_f = nf_t + nf_r;
-  onednft = 1.0 + (double)(dimension) / (double)g_f;
-  onednfr = (double) (dimension) / (double)g_f;
 
   // see Table 1 in Kamberaj et al
 
@@ -270,7 +270,7 @@ void FixRigidNH::init()
 
     for (int i = 0; i < modify->nfix; i++)
       if (strcmp(modify->fix[i]->style,"deform") == 0) {
-        int *dimflag = ((FixDeform *) modify->fix[i])->dimflag;
+        int *dimflag = (dynamic_cast<FixDeform *>(modify->fix[i]))->dimflag;
         if ((p_flag[0] && dimflag[0]) || (p_flag[1] && dimflag[1]) ||
             (p_flag[2] && dimflag[2]))
           error->all(FLERR,"Cannot use fix rigid npt/nph and fix deform on "
@@ -303,9 +303,9 @@ void FixRigidNH::init()
     // rfix[] = indices to each fix rigid
     // this will include self
 
-    if (rfix) delete [] rfix;
+    delete[] rfix;
     nrigidfix = 0;
-    rfix = NULL;
+    rfix = nullptr;
 
     for (int i = 0; i < modify->nfix; i++)
       if (modify->fix[i]->rigid_flag) nrigidfix++;
@@ -566,8 +566,7 @@ void FixRigidNH::initial_integrate(int vflag)
 
   // virial setup before call to set_xv
 
-  if (vflag) v_setup(vflag);
-  else evflag = 0;
+  v_init(vflag);
 
   // remap simulation box by 1/2 step
 
@@ -591,9 +590,9 @@ void FixRigidNH::initial_integrate(int vflag)
 
 void FixRigidNH::final_integrate()
 {
-  int i,ibody;
+  int ibody;
   double tmp,scale_t[3],scale_r;
-  double dtfm,xy,xz,yz;
+  double dtfm;
   double mbody[3],tbody[3],fquat[4];
 
   double dtf2 = dtf * 2.0;
@@ -620,87 +619,14 @@ void FixRigidNH::final_integrate()
     akin_t = akin_r = 0.0;
   }
 
-  // sum over atoms to get force and torque on rigid body
+  // late calculation of forces and torques (if requested)
 
-  double **x = atom->x;
-  double **f = atom->f;
-  int nlocal = atom->nlocal;
-
-  double xprd = domain->xprd;
-  double yprd = domain->yprd;
-  double zprd = domain->zprd;
-  if (triclinic) {
-    xy = domain->xy;
-    xz = domain->xz;
-    yz = domain->yz;
-  }
-
-  int xbox,ybox,zbox;
-  double xunwrap,yunwrap,zunwrap,dx,dy,dz;
-  for (ibody = 0; ibody < nbody; ibody++)
-    for (i = 0; i < 6; i++) sum[ibody][i] = 0.0;
-
-  for (i = 0; i < nlocal; i++) {
-    if (body[i] < 0) continue;
-    ibody = body[i];
-
-    sum[ibody][0] += f[i][0];
-    sum[ibody][1] += f[i][1];
-    sum[ibody][2] += f[i][2];
-
-    xbox = (xcmimage[i] & IMGMASK) - IMGMAX;
-    ybox = (xcmimage[i] >> IMGBITS & IMGMASK) - IMGMAX;
-    zbox = (xcmimage[i] >> IMG2BITS) - IMGMAX;
-
-    if (triclinic == 0) {
-      xunwrap = x[i][0] + xbox*xprd;
-      yunwrap = x[i][1] + ybox*yprd;
-      zunwrap = x[i][2] + zbox*zprd;
-    } else {
-      xunwrap = x[i][0] + xbox*xprd + ybox*xy + zbox*xz;
-      yunwrap = x[i][1] + ybox*yprd + zbox*yz;
-      zunwrap = x[i][2] + zbox*zprd;
-    }
-
-    dx = xunwrap - xcm[ibody][0];
-    dy = yunwrap - xcm[ibody][1];
-    dz = zunwrap - xcm[ibody][2];
-
-    sum[ibody][3] += dy*f[i][2] - dz*f[i][1];
-    sum[ibody][4] += dz*f[i][0] - dx*f[i][2];
-    sum[ibody][5] += dx*f[i][1] - dy*f[i][0];
-  }
-
-  // extended particles add their torque to torque of body
-
-  if (extended) {
-    double **torque_one = atom->torque;
-
-    for (i = 0; i < nlocal; i++) {
-      if (body[i] < 0) continue;
-      ibody = body[i];
-
-      if (eflags[i] & TORQUE) {
-        sum[ibody][3] += torque_one[i][0];
-        sum[ibody][4] += torque_one[i][1];
-        sum[ibody][5] += torque_one[i][2];
-      }
-    }
-  }
-
-  MPI_Allreduce(sum[0],all[0],6*nbody,MPI_DOUBLE,MPI_SUM,world);
+  if (!earlyflag) compute_forces_and_torques();
 
   // update vcm and angmom
-  // include Langevin thermostat forces
   // fflag,tflag = 0 for some dimensions in 2d
 
   for (ibody = 0; ibody < nbody; ibody++) {
-    fcm[ibody][0] = all[ibody][0] + langextra[ibody][0];
-    fcm[ibody][1] = all[ibody][1] + langextra[ibody][1];
-    fcm[ibody][2] = all[ibody][2] + langextra[ibody][2];
-    torque[ibody][0] = all[ibody][3] + langextra[ibody][3];
-    torque[ibody][1] = all[ibody][4] + langextra[ibody][4];
-    torque[ibody][2] = all[ibody][5] + langextra[ibody][5];
 
     // update vcm by 1/2 step
 
@@ -794,6 +720,8 @@ void FixRigidNH::final_integrate()
 
 void FixRigidNH::nhc_temp_integrate()
 {
+  if (g_f == 0) return;
+
   int i,j,k;
   double kt,gfkt_t,gfkt_r,tmp,ms,s,s2;
 
@@ -895,7 +823,7 @@ void FixRigidNH::nhc_press_integrate()
 
   double tb_mass = kt / (p_freq_max * p_freq_max);
   q_b[0] = dimension * dimension * tb_mass;
-  for (int i = 1; i < p_chain; i++) {
+  for (i = 1; i < p_chain; i++) {
     q_b[i] = tb_mass;
     f_eta_b[i] = q_b[i-1] * eta_dot_b[i-1] * eta_dot_b[i-1] - kt;
     f_eta_b[i] /= q_b[i];
@@ -1138,6 +1066,8 @@ void FixRigidNH::compute_press_target()
 
 void FixRigidNH::nh_epsilon_dot()
 {
+  if (g_f == 0) return;
+
   int i;
   double volume,scale,f_epsilon;
 
@@ -1232,7 +1162,7 @@ void FixRigidNH::write_restart(FILE *fp)
 void FixRigidNH::restart(char *buf)
 {
   int n = 0;
-  double *list = (double *) buf;
+  auto list = (double *) buf;
   int flag = static_cast<int> (list[n++]);
 
   if (flag) {
@@ -1277,9 +1207,7 @@ int FixRigidNH::modify_param(int narg, char **arg)
       tcomputeflag = 0;
     }
     delete [] id_temp;
-    int n = strlen(arg[1]) + 1;
-    id_temp = new char[n];
-    strcpy(id_temp,arg[1]);
+    id_temp = utils::strdup(arg[1]);
 
     int icompute = modify->find_compute(arg[1]);
     if (icompute < 0)
@@ -1311,9 +1239,7 @@ int FixRigidNH::modify_param(int narg, char **arg)
       pcomputeflag = 0;
     }
     delete [] id_press;
-    int n = strlen(arg[1]) + 1;
-    id_press = new char[n];
-    strcpy(id_press,arg[1]);
+    id_press = utils::strdup(arg[1]);
 
     int icompute = modify->find_compute(arg[1]);
     if (icompute < 0) error->all(FLERR,"Could not find fix_modify pressure ID");
@@ -1324,7 +1250,7 @@ int FixRigidNH::modify_param(int narg, char **arg)
     return 2;
   }
 
-  return 0;
+  return FixRigid::modify_param(narg,arg);
 }
 
 /* ---------------------------------------------------------------------- */

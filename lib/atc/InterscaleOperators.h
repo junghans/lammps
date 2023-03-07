@@ -35,12 +35,12 @@ namespace ATC {
   //--------------------------------------------------------
 
   class InterscaleManager {
-  
+
   public:
-  
+
     // constructor
     InterscaleManager(ATC_Method * atc);
-    
+
     // destructor
     ~InterscaleManager();
 
@@ -52,7 +52,7 @@ namespace ATC {
 
     /** set lammps data prefix */
     void set_lammps_data_prefix();
-        
+
     /** parser/modifier */
     bool modify(int narg, char **arg);
 
@@ -183,7 +183,7 @@ namespace ATC {
     int unpack_exchange(int i, double *buffer);
 
     /** packs up data for parallel transfer to ghost atoms on other processors */
-    int pack_comm(int index, double *buf, 
+    int pack_comm(int index, double *buf,
                   int pbc_flag, int *pbc);
 
     /** unpacks data after parallel transfer to ghost atoms on other processors */
@@ -196,7 +196,7 @@ namespace ATC {
     void copy_arrays(int i, int j);
 
   protected:
-  
+
     /** pointer to access ATC methods */
     ATC_Method * atc_;
 
@@ -245,19 +245,19 @@ namespace ATC {
     /** container for molecule sets */
     std::map<std::string, SmallMoleculeSet * > smallMoleculeSets_;
 
-    /** container for atomic quantities which must be transfered when atoms cross processors */
+    /** container for atomic quantities which must be transferred when atoms cross processors */
     std::set<PerAtomQuantity<double> *> exchangeList_;
 
-    /** container for atomic quantities which must be transfered to ghost atoms on other processors */
+    /** container for atomic quantities which must be transferred to ghost atoms on other processors */
     std::vector<PerAtomQuantity<double> *> commList_;
 
-    /** container for integer atomic quantities which must be transfered to ghost atoms on other processors */
+    /** container for integer atomic quantities which must be transferred to ghost atoms on other processors */
     std::vector<PerAtomQuantity<int> *> commIntList_;
 
-    /** container for atomic diagonal matrices which must be transfered to ghost atoms on other processors */
+    /** container for atomic diagonal matrices which must be transferred to ghost atoms on other processors */
     std::vector<PerAtomDiagonalMatrix<double> *> commDmList_;
 
-    /** container for atomic sparse matrices which must be transfered to ghost atoms on other processors */
+    /** container for atomic sparse matrices which must be transferred to ghost atoms on other processors */
     std::vector<PerAtomSparseMatrix<double> *> commSmList_;
 
     /** prefix for labeling associated lammps arrays */
@@ -277,9 +277,9 @@ namespace ATC {
     data * return_quantity(std::map<std::string,data * > & list, const std::string & tag)
     {
       typename std::map<std::string,data * >::iterator it = list.find(tag);
-      if (it==list.end()) return NULL;
+      if (it==list.end()) return nullptr;
       return it->second;
-    };
+    }
 
     /** helper function to add a data entry to a list */
     template <typename data>
@@ -290,7 +290,7 @@ namespace ATC {
         throw ATC_Error("Tried to add another Quantity with tag "+tag+" in InterscaleManager::add_quantity");
       typename std::template pair<std::string,data * > myPair(tag,quantity);
       list.insert(myPair);
-    };
+    }
 
     /** helper function to add a data entry to a list when it requires neighbor communication*/
     template <typename data>
@@ -302,7 +302,7 @@ namespace ATC {
       if (quantity->atom_type() == PROC_GHOST) {
         commList.push_back(quantity);
       }
-    };
+    }
 
      /** helper function to fina a data entry in a list */
     template <typename data>
@@ -310,8 +310,8 @@ namespace ATC {
     {
       typename std::map<std::string,data * >::iterator it = list.find(tag);
       if (it!=list.end()) return it->second;
-      return NULL;
-    };
+      return nullptr;
+    }
 
     /** helper function to force the reset of all data in a list */
     template <typename data>
@@ -319,7 +319,7 @@ namespace ATC {
     {
       for (typename std::map<std::string,data* >::iterator it = list.begin(); it != list.end(); ++it)
         (it->second)->force_reset();
-    };
+    }
 
     /** helper function to set the memory type to temporary of a list */
     template <typename data>
@@ -327,16 +327,16 @@ namespace ATC {
     {
       for (typename std::map<std::string,data* >::iterator it = list.begin(); it != list.end(); ++it)
         (it->second)->set_memory_type(TEMPORARY);
-    };
+    }
 
-    /** helper function to perform intialization for dfs of a list */
+    /** helper function to perform initialization for dfs of a list */
     template <typename data>
     void dfs_prepare_loop(std::map<std::string,data * > & list)
     {
       for (typename std::map<std::string,data* >::iterator it = list.begin(); it != list.end(); ++it) {
         (it->second)->dfsFound_ = false;
       }
-    };
+    }
 
     /** helper function to start the dfs visit for list */
     template <typename data>
@@ -349,7 +349,7 @@ namespace ATC {
         if ((it->second)->memory_type()==TEMPORARY) list.erase(it++);
         else ++it;
       }
-    };
+    }
 
     // PAQ helper functions
     /** helper function to adjust local atom count for all data in a list before exchange, only valid with quantities that do that are aware of atom counts */
@@ -359,7 +359,7 @@ namespace ATC {
       for (typename std::map<std::string,data* >::iterator it = list.begin(); it != list.end(); ++it) {
         (it->second)->reset_nlocal();
       }
-    };
+    }
 
     /** helper function to indicate lammps data is stale for all data in a list before exchange, only valid with PAQs */
     template <typename data>
@@ -367,7 +367,7 @@ namespace ATC {
     {
       for (typename std::map<std::string,data* >::iterator it = list.begin(); it != list.end(); ++it)
         (it->second)->lammps_force_reset();
-    };
+    }
 
     /** helper function to size all data in a list, only valid with comm lists */
     template <typename data>
@@ -375,7 +375,7 @@ namespace ATC {
     {
       for (typename std::vector<data* >::iterator it = list.begin(); it != list.end(); ++it)
         (*it)->quantity();
-    };
+    }
 
     /** helper function to pack all data in a list before exchange, only valid with quantities that do work before parallel communication */
     template <typename data>
@@ -384,7 +384,7 @@ namespace ATC {
       for (typename std::map<std::string,data* >::iterator it = list.begin(); it != list.end(); ++it) {
         (it->second)->prepare_exchange();
       }
-    };
+    }
 
     /** helper function to extract all data in a list after exchange, only valid with quantities that do work after parallel communication */
     template <typename data>
@@ -393,7 +393,7 @@ namespace ATC {
       for (typename std::map<std::string,data* >::iterator it = list.begin(); it != list.end(); ++it) {
         (it->second)->post_exchange();
       }
-    };
+    }
 
     /** helper function to determine memory usage of all data in a list, only valid with PAQs */
     template <typename data>
@@ -401,7 +401,7 @@ namespace ATC {
     {
       for (typename std::map<std::string,data* >::const_iterator it = list.begin(); it != list.end(); ++it)
         usage += (it->second)->memory_usage();
-    };
+    }
 
     /** helper function to pack arrays of all data before exchange in a list, only valid with PAQs */
     template <typename data>
@@ -410,7 +410,7 @@ namespace ATC {
       for (typename std::map<std::string,data* >::iterator it = list.begin(); it != list.end(); ++it) {
         index += (it->second)->pack_exchange(i,&buffer[index]);
       }
-    };
+    }
 
     /** helper function to unpack arrays of all data after exchange in a list, only valid with PAQs */
     template <typename data>
@@ -418,16 +418,16 @@ namespace ATC {
     {
       for (typename std::map<std::string,data* >::iterator it = list.begin(); it != list.end(); ++it)
         index += (it->second)->unpack_exchange(i,&buffer[index]);
-    };
+    }
 
     /** helper function to pack arrays of all data in a list, only valid with comm lists */
     template <typename data>
-    void pack_comm_loop(std::vector<data * > & list, int & size, int index, double *buf, 
+    void pack_comm_loop(std::vector<data * > & list, int & size, int index, double *buf,
                         int pbc_flag, int *pbc)
     {
       for (typename std::vector<data* >::iterator it = list.begin(); it != list.end(); ++it)
         size += (*it)->pack_comm(index,&buf[size],pbc_flag,pbc);
-    };
+    }
 
     /** helper function to unpack arrays of all data in a list, only valid with comm lists */
     template <typename data>
@@ -435,7 +435,7 @@ namespace ATC {
     {
       for (typename std::vector<data* >::iterator it = list.begin(); it != list.end(); ++it)
         size += (*it)->unpack_comm(index,&buf[size]);
-    };
+    }
 
     /** helper function to grow arrays of all data in a list, only valid with PAQs */
     template <typename data>
@@ -443,7 +443,7 @@ namespace ATC {
     {
       for (typename std::map<std::string,data* >::iterator it = list.begin(); it != list.end(); ++it)
         (it->second)->grow_lammps_array(nmax,prefix_+it->first);
-    };
+    }
 
     /** helper function to copy arrays of all data in a list, only valid with PAQs */
     template <typename data>
@@ -455,9 +455,9 @@ namespace ATC {
 
   private:
 
-    
+
     InterscaleManager();
-  
+
   };
 
 }

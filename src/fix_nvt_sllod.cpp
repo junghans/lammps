@@ -1,7 +1,8 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   www.cs.sandia.gov/~sjplimp/lammps.html
-   Steve Plimpton, sjplimp@sandia.gov, Sandia National Laboratories
+   https://www.lammps.org/
+   LAMMPS development team: developers@lammps.org, Sandia National Laboratories
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -15,23 +16,21 @@
    Contributing author: Pieter in 't Veld (SNL)
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstring>
 #include "fix_nvt_sllod.h"
-#include "math_extra.h"
+
 #include "atom.h"
-#include "domain.h"
-#include "group.h"
-#include "modify.h"
-#include "fix.h"
-#include "fix_deform.h"
 #include "compute.h"
+#include "domain.h"
 #include "error.h"
+#include "fix_deform.h"
+#include "group.h"
+#include "math_extra.h"
+#include "modify.h"
+
+#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
-
-enum{NO_REMAP,X_REMAP,V_REMAP};                   // same as fix_deform.cpp
 
 /* ---------------------------------------------------------------------- */
 
@@ -45,25 +44,28 @@ FixNVTSllod::FixNVTSllod(LAMMPS *lmp, int narg, char **arg) :
 
   // default values
 
+  psllod_flag = 0;
   if (mtchain_default_flag) mtchain = 1;
 
+  // select SLLOD/p-SLLOD/g-SLLOD variant
+
+  int iarg = 3;
+
+  while (iarg < narg) {
+    if (strcmp(arg[iarg],"psllod") == 0) {
+      if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "fix nvt/sllod psllod", error);
+      psllod_flag = utils::logical(FLERR,arg[iarg+1],false,lmp);
+      iarg += 2;
+    } else iarg++;
+  }
 
   // create a new compute temp style
   // id = fix-ID + temp
 
-  int n = strlen(id) + 6;
-  id_temp = new char[n];
-  strcpy(id_temp,id);
-  strcat(id_temp,"_temp");
-
-  char **newarg = new char*[3];
-  newarg[0] = id_temp;
-  newarg[1] = group->names[igroup];
-  newarg[2] = (char *) "temp/deform";
-
-  modify->add_compute(3,newarg);
-  delete [] newarg;
+  id_temp = utils::strdup(std::string(id) + "_temp");
+  modify->add_compute(fmt::format("{} {} temp/deform",id_temp,group->names[igroup]));
   tcomputeflag = 1;
+  nondeformbias = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -73,23 +75,21 @@ void FixNVTSllod::init()
   FixNH::init();
 
   if (!temperature->tempbias)
-    error->all(FLERR,"Temperature for fix nvt/sllod does not have a bias");
+    error->all(FLERR,"Temperature for fix {} does not have a bias", style);
 
   nondeformbias = 0;
   if (strcmp(temperature->style,"temp/deform") != 0) nondeformbias = 1;
 
   // check fix deform remap settings
 
-  int i;
-  for (i = 0; i < modify->nfix; i++)
-    if (strcmp(modify->fix[i]->style,"deform") == 0) {
-      if (((FixDeform *) modify->fix[i])->remapflag != V_REMAP)
-        error->all(FLERR,"Using fix nvt/sllod with inconsistent fix deform "
-                   "remap option");
-      break;
-    }
-  if (i == modify->nfix)
-    error->all(FLERR,"Using fix nvt/sllod with no fix deform defined");
+  auto deform = modify->get_fix_by_style("^deform");
+  if (deform.size() < 1) error->all(FLERR,"Using fix {} with no fix deform defined", style);
+
+  for (auto ifix : deform) {
+    auto f = dynamic_cast<FixDeform *>(ifix);
+    if (f && (f->remapflag != Domain::V_REMAP))
+      error->all(FLERR,"Using fix {} with inconsistent fix deform remap option", style);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -117,10 +117,11 @@ void FixNVTSllod::nh_v_temp()
 
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
+      if (!psllod_flag) temperature->remove_bias(i,v[i]);
       vdelu[0] = h_two[0]*v[i][0] + h_two[5]*v[i][1] + h_two[4]*v[i][2];
       vdelu[1] = h_two[1]*v[i][1] + h_two[3]*v[i][2];
       vdelu[2] = h_two[2]*v[i][2];
-      temperature->remove_bias(i,v[i]);
+      if (psllod_flag) temperature->remove_bias(i,v[i]);
       v[i][0] = v[i][0]*factor_eta - dthalf*vdelu[0];
       v[i][1] = v[i][1]*factor_eta - dthalf*vdelu[1];
       v[i][2] = v[i][2]*factor_eta - dthalf*vdelu[2];

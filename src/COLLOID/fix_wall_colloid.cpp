@@ -1,7 +1,8 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   http://lammps.sandia.gov, Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -15,17 +16,14 @@
    Contributing authors: Jeremy Lechman (SNL)
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstring>
 #include "fix_wall_colloid.h"
+
 #include "atom.h"
-#include "atom_vec.h"
-#include "update.h"
-#include "respa.h"
 #include "error.h"
 
+#include <cmath>
+
 using namespace LAMMPS_NS;
-using namespace FixConst;
 
 /* ---------------------------------------------------------------------- */
 
@@ -39,7 +37,7 @@ void FixWallColloid::init()
   if (!atom->sphere_flag)
     error->all(FLERR,"Fix wall/colloid requires atom style sphere");
 
-  // insure all particles in group are extended particles
+  // ensure all particles in group are extended particles
 
   double *radius = atom->radius;
   int *mask = atom->mask;
@@ -156,7 +154,7 @@ void FixWallColloid::wall_particle(int m, int which, double coord)
       if (evflag) {
         if (side < 0) vn = -fwall*delta;
         else vn = fwall*delta;
-        v_tally(dim, i, vn);
+        v_tally(dim,i,vn);
       }
     }
 

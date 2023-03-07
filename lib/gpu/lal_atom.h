@@ -16,7 +16,7 @@
 #ifndef PAIR_GPU_ATOM_H
 #define PAIR_GPU_ATOM_H
 
-#include <math.h>
+#include <cmath>
 #include "mpi.h"
 
 #if defined(USE_OPENCL)
@@ -24,11 +24,19 @@
 #include "geryon/ocl_mat.h"
 #include "geryon/ocl_kernel.h"
 using namespace ucl_opencl;
+#ifndef LAL_NO_OCL_EV_JIT
+#define LAL_OCL_EV_JIT
+#endif
 #elif defined(USE_CUDART)
 #include "geryon/nvc_timer.h"
 #include "geryon/nvc_mat.h"
 #include "geryon/nvc_kernel.h"
 using namespace ucl_cudart;
+#elif defined(USE_HIP)
+#include "geryon/hip_timer.h"
+#include "geryon/hip_mat.h"
+#include "geryon/hip_kernel.h"
+using namespace ucl_hip;
 #else
 #include "geryon/nvd_timer.h"
 #include "geryon/nvd_mat.h"
@@ -68,7 +76,7 @@ class Atom {
     *        gpu_nbor 2 if binning on host and neighboring on device **/
   bool init(const int nall, const bool charge, const bool rot,
             UCL_Device &dev, const int gpu_nbor=0, const bool bonds=false,
-            const bool vel=false);
+            const bool vel=false, const int extra_fields=0);
 
   /// Check if we have enough device storage and realloc if not
   /** Returns true if resized with any call during this timestep **/
@@ -88,7 +96,7 @@ class Atom {
     *        gpu_nbor 1 if neighboring will be performed on device
     *        gpu_nbor 2 if binning on host and neighboring on device **/
   bool add_fields(const bool charge, const bool rot, const int gpu_nbor,
-                  const bool bonds, const bool vel=false);
+                  const bool bonds, const bool vel=false, const int extra_fields=0);
 
   /// Returns true if GPU is using charges
   bool charge() { return _charge; }
@@ -98,6 +106,9 @@ class Atom {
 
   /// Returns true if GPU is using velocities
   bool velocity() { return _vel; }
+
+  /// Returns true if GPU is using extra fields
+  bool using_extra() { return (_extra_fields>0); }
 
   /// Only free matrices of length inum or nall for resizing
   void clear_resize();
@@ -120,6 +131,8 @@ class Atom {
       time_quat.add_to_total();
     if (_vel)
       time_vel.add_to_total();
+    if (_extra_fields>0)
+      time_extra.add_to_total();
   }
 
   /// Add copy times to timers
@@ -131,6 +144,8 @@ class Atom {
       time_quat.zero();
     if (_vel)
       time_vel.zero();
+    if (_extra_fields>0)
+      time_extra.zero();
   }
 
   /// Return the total time for host/device data transfer
@@ -149,6 +164,10 @@ class Atom {
     if (_vel) {
       total+=time_vel.total_seconds();
       time_vel.zero_total();
+    }
+    if (_extra_fields>0) {
+      total+=time_extra.total_seconds();
+      time_extra.zero_total();
     }
 
     return total+_time_transfer/1000.0;
@@ -173,7 +192,7 @@ class Atom {
       ii+=m_size-n;
     }
     UCL_H_Vec<dev_typ> view;
-    view.view((dev_typ*)buffer.begin(),m_size*m_size,*dev);
+    view.view_offset(0,buffer,m_size*m_size);
     ucl_copy(dev_v,view,false);
   }
 
@@ -192,7 +211,26 @@ class Atom {
       ii+=m_size-n;
     }
     UCL_H_Vec<dev_typ> view;
-    view.view((dev_typ*)buffer.begin(),m_size*m_size,*dev);
+    view.view_offset(0,buffer,m_size*m_size);
+    ucl_copy(dev_v,view,false);
+  }
+
+  /// Pack LAMMPS atom type constants into 2 vectors and copy to device
+  template <class dev_typ, class t1, class t2>
+  inline void type_pack2(const int n, UCL_D_Vec<dev_typ> &dev_v,
+                         UCL_H_Vec<numtyp> &buffer, t1 ***one, t2 ***two) {
+    int ii=0;
+    for (int i=0; i<n; i++) {
+      for (int j=0; j<n; j++) {
+        for (int k=0; k<n; k++) {
+          buffer[ii*2]=static_cast<numtyp>(one[i][j][k]);
+          buffer[ii*2+1]=static_cast<numtyp>(two[i][j][k]);
+          ii++;
+        }
+      }
+    }
+    UCL_H_Vec<dev_typ> view;
+    view.view_offset(0,buffer,n*n*n);
     ucl_copy(dev_v,view,false);
   }
 
@@ -212,7 +250,7 @@ class Atom {
       ii+=m_size-n;
     }
     UCL_H_Vec<dev_typ> view;
-    view.view((dev_typ*)buffer.begin(),m_size*m_size,*dev);
+    view.view_offset(0,buffer,m_size*m_size);
     ucl_copy(dev_v,view,false);
   }
 
@@ -233,7 +271,7 @@ class Atom {
       ii+=m_size-n;
     }
     UCL_H_Vec<dev_typ> view;
-    view.view((dev_typ*)buffer.begin(),m_size*m_size,*dev);
+    view.view_offset(0,buffer,m_size*m_size);
     ucl_copy(dev_v,view,false);
   }
 
@@ -246,7 +284,7 @@ class Atom {
       buffer[i*2+1]=static_cast<numtyp>(two[i][i]);
     }
     UCL_H_Vec<dev_typ> view;
-    view.view((dev_typ*)buffer.begin(),n,*dev);
+    view.view_offset(0,buffer,n);
     ucl_copy(dev_v,view,false);
   }
 
@@ -254,7 +292,14 @@ class Atom {
 
   /// Signal that we need to transfer atom data for next timestep
   inline void data_unavail()
-    { _x_avail=false; _q_avail=false; _quat_avail=false; _v_avail=false; _resized=false; }
+    { _x_avail=false; _q_avail=false; _quat_avail=false; _v_avail=false; _extra_avail=false; _resized=false; }
+
+  /// Signal that we need to transfer atom extra data for next kernel call
+  inline void extra_data_unavail()
+    { _extra_avail=false; }
+
+  typedef struct { double x,y,z; } vec3d;
+  typedef struct { numtyp x,y,z,w; } vec4d_t;
 
   /// Cast positions and types to write buffer
   inline void cast_x_data(double **host_ptr, const int *host_type) {
@@ -264,13 +309,16 @@ class Atom {
       memcpy(host_x_cast.begin(),host_ptr[0],_nall*3*sizeof(double));
       memcpy(host_type_cast.begin(),host_type,_nall*sizeof(int));
       #else
-      int wl=0;
+      vec3d *host_p=reinterpret_cast<vec3d*>(&(host_ptr[0][0]));
+      vec4d_t *xp=reinterpret_cast<vec4d_t*>(&(x[0]));
+      #if (LAL_USE_OMP == 1)
+      #pragma omp parallel for schedule(static)
+      #endif
       for (int i=0; i<_nall; i++) {
-        x[wl]=host_ptr[i][0];
-        x[wl+1]=host_ptr[i][1];
-        x[wl+2]=host_ptr[i][2];
-        x[wl+3]=host_type[i];
-        wl+=4;
+        xp[i].x=host_p[i].x;
+        xp[i].y=host_p[i].y;
+        xp[i].z=host_p[i].z;
+        xp[i].w=host_type[i];
       }
       #endif
       _time_cast+=MPI_Wtime()-t;
@@ -279,7 +327,7 @@ class Atom {
 
   /// Copy positions and types to device asynchronously
   /** Copies nall() elements **/
-  inline void add_x_data(double **host_ptr, int *host_type) {
+  inline void add_x_data(double ** /*host_ptr*/, int * /*host_type*/) {
     time_pos.start();
     if (_x_avail==false) {
       #ifdef GPU_CAST
@@ -315,6 +363,11 @@ class Atom {
       } else if (sizeof(numtyp)==sizeof(double))
         memcpy(q.host.begin(),host_ptr,_nall*sizeof(numtyp));
       else
+        #if (LAL_USE_OMP == 1) && (LAL_USE_OMP_SIMD == 1)
+        #pragma omp parallel for simd schedule(static)
+        #elif (LAL_USE_OMP_SIMD == 1)
+        #pragma omp simd
+        #endif
         for (int i=0; i<_nall; i++) q[i]=host_ptr[i];
       _time_cast+=MPI_Wtime()-t;
     }
@@ -322,10 +375,12 @@ class Atom {
 
   // Copy charges to device asynchronously
   inline void add_q_data() {
+    time_q.start();
     if (_q_avail==false) {
       q.update_device(_nall,true);
       _q_avail=true;
     }
+    time_q.stop();
   }
 
   // Cast quaternions to write buffer
@@ -339,6 +394,11 @@ class Atom {
       } else if (sizeof(numtyp)==sizeof(double))
         memcpy(quat.host.begin(),host_ptr,_nall*4*sizeof(numtyp));
       else
+        #if (LAL_USE_OMP == 1) && (LAL_USE_OMP_SIMD == 1)
+        #pragma omp parallel for simd schedule(static)
+        #elif (LAL_USE_OMP_SIMD == 1)
+        #pragma omp simd
+        #endif
         for (int i=0; i<_nall*4; i++) quat[i]=host_ptr[i];
       _time_cast+=MPI_Wtime()-t;
     }
@@ -347,10 +407,12 @@ class Atom {
   // Copy quaternions to device
   /** Copies nall()*4 elements **/
   inline void add_quat_data() {
+    time_quat.start();
     if (_quat_avail==false) {
       quat.update_device(_nall*4,true);
       _quat_avail=true;
     }
+    time_quat.stop();
   }
 
   /// Cast velocities and tags to write buffer
@@ -361,13 +423,16 @@ class Atom {
       memcpy(host_v_cast.begin(),host_ptr[0],_nall*3*sizeof(double));
       memcpy(host_tag_cast.begin(),host_tag,_nall*sizeof(int));
       #else
-      int wl=0;
+      vec3d *host_p=reinterpret_cast<vec3d*>(&(host_ptr[0][0]));
+      vec4d_t *vp=reinterpret_cast<vec4d_t*>(&(v[0]));
+      #if (LAL_USE_OMP == 1)
+      #pragma omp parallel for schedule(static)
+      #endif
       for (int i=0; i<_nall; i++) {
-        v[wl]=host_ptr[i][0];
-        v[wl+1]=host_ptr[i][1];
-        v[wl+2]=host_ptr[i][2];
-        v[wl+3]=host_tag[i];
-        wl+=4;
+        vp[i].x=host_p[i].x;
+        vp[i].y=host_p[i].y;
+        vp[i].z=host_p[i].z;
+        vp[i].w=host_tag[i];
       }
       #endif
       _time_cast+=MPI_Wtime()-t;
@@ -376,7 +441,7 @@ class Atom {
 
   /// Copy velocities and tags to device asynchronously
   /** Copies nall() elements **/
-  inline void add_v_data(double **host_ptr, tagint *host_tag) {
+  inline void add_v_data(double ** /*host_ptr*/, tagint * /*host_tag*/) {
     time_vel.start();
     if (_v_avail==false) {
       #ifdef GPU_CAST
@@ -398,6 +463,33 @@ class Atom {
   inline void cast_copy_v(double **host_ptr, tagint *host_tag) {
     cast_v_data(host_ptr,host_tag);
     add_v_data(host_ptr,host_tag);
+  }
+
+ // Cast extras to write buffer
+  template<class cpytyp>
+  inline void cast_extra_data(cpytyp *host_ptr) {
+    if (_extra_avail==false) {
+      double t=MPI_Wtime();
+      #if (LAL_USE_OMP == 1) && (LAL_USE_OMP_SIMD == 1)
+      #pragma omp parallel for simd schedule(static)
+      #elif (LAL_USE_OMP_SIMD == 1)
+      #pragma omp simd
+      #endif
+      for (int i=0; i<_nall*_extra_fields; i++)
+        extra[i]=host_ptr[i];
+      _time_cast+=MPI_Wtime()-t;
+    }
+  }
+
+  // Copy extras to device
+  /** Copies nall()*_extra elements **/
+  inline void add_extra_data() {
+    time_extra.start();
+    if (_extra_avail==false) {
+      extra.update_device(_nall*_extra_fields,true);
+      _extra_avail=true;
+    }
+    time_extra.stop();
   }
 
   /// Add in casting time from additional data (seconds)
@@ -423,9 +515,11 @@ class Atom {
   UCL_Vector<numtyp,numtyp> quat;
   /// Velocities
   UCL_Vector<numtyp,numtyp> v;
+  /// Extras
+  UCL_Vector<numtyp4,numtyp4> extra;
 
   #ifdef GPU_CAST
-  UCL_Vector<double,double> x_cast;
+  UCL_Vector<numtyp,numtyp> x_cast;
   UCL_Vector<int,int> type_cast;
   #endif
 
@@ -443,7 +537,7 @@ class Atom {
   UCL_H_Vec<int> host_particle_id;
 
   /// Device timers
-  UCL_Timer time_pos, time_q, time_quat, time_vel;
+  UCL_Timer time_pos, time_q, time_quat, time_vel, time_extra;
 
   /// Geryon device
   UCL_Device *dev;
@@ -458,11 +552,12 @@ class Atom {
   bool _compiled;
 
   // True if data has been copied to device already
-  bool _x_avail, _q_avail, _quat_avail, _v_avail, _resized;
+  bool _x_avail, _q_avail, _quat_avail, _v_avail, _extra_avail, _resized;
 
   bool alloc(const int nall);
 
   bool _allocated, _rot, _charge, _bonds, _vel, _other;
+  int _extra_fields;
   int _max_atoms, _nall, _gpu_nbor;
   bool _host_view;
   double _time_cast, _time_transfer;
@@ -472,6 +567,14 @@ class Atom {
   #ifdef USE_CUDPP
   CUDPPConfiguration sort_config;
   CUDPPHandle sort_plan;
+  #endif
+
+  #ifdef USE_HIP_DEVICE_SORT
+  unsigned* sort_out_keys = nullptr;
+  int* sort_out_values = nullptr;
+  void* sort_temp_storage = nullptr;
+  size_t sort_temp_storage_size = 0;
+  size_t sort_out_size = 0;
   #endif
 };
 

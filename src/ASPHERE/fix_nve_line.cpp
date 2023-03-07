@@ -1,7 +1,8 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   http://lammps.sandia.gov, Sandia National Laboratories
-   Steve Plimpton, sjplimp@sandia.gov
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -11,9 +12,6 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <cmath>
-#include <cstdio>
-#include <cstring>
 #include "fix_nve_line.h"
 #include "atom.h"
 #include "atom_vec_line.h"
@@ -58,7 +56,7 @@ void FixNVELine::init()
 {
   // error checks
 
-  avec = (AtomVecLine *) atom->style_match("line");
+  avec = dynamic_cast<AtomVecLine *>(atom->style_match("line"));
   if (!avec) error->all(FLERR,"Fix nve/line requires atom style line");
 
   if (domain->dimension != 2)
@@ -81,7 +79,7 @@ void FixNVELine::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixNVELine::initial_integrate(int vflag)
+void FixNVELine::initial_integrate(int /*vflag*/)
 {
   double dtfm,dtirotate,length,theta;
 
